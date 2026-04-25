@@ -3,8 +3,13 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxx}
     environment:
       - ORCHESTRATOR_API_BASE_URL=http://orchestrator:8000
+      - NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL=http://127.0.0.1:8000
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxx}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY:-sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxx}
     ports:
       - "3000:3000"
     depends_on:

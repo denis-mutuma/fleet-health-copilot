@@ -135,10 +135,12 @@ The pull request test workflow runs the same web, orchestrator, and MCP checks.
 You can also run the full local stack with Docker:
 
 ```bash
+export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export CLERK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 docker compose up --build
 ```
 
-The current web container is suitable for local development and still requires Clerk environment variables to be supplied.
+The web container builds the Next.js app and serves it with `next start`. Supply real Clerk keys through the exported environment variables before using protected routes.
 
 ## Current Scope
 

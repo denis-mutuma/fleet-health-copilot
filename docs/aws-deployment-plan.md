@@ -98,6 +98,26 @@ Future workflow steps:
     aws-region: us-east-1
 ```
 
+## Image Publish Workflow
+
+`.github/workflows/publish-images.yml` is manually triggered and publishes both container images to ECR.
+
+Required inputs:
+
+- `aws_region`: AWS region for ECR.
+- `role_to_assume`: value from Terraform output `github_actions_role_arn`.
+- `web_repository_url`: `web` entry from Terraform output `ecr_repository_urls`.
+- `orchestrator_repository_url`: `orchestrator` entry from Terraform output `ecr_repository_urls`.
+- `image_tag`: image tag to publish, for example a git SHA or release tag.
+- `next_public_clerk_publishable_key`: Clerk publishable key required during the web build.
+
+Recommended first run:
+
+1. Apply Terraform with `github_repository=OWNER/REPO`.
+2. Copy the ECR URLs and GitHub Actions role ARN from Terraform outputs.
+3. Trigger `publish-images` manually.
+4. Use a commit SHA as `image_tag` for traceability.
+
 ## MVP Cloud Resource Sequence
 
 Add cloud resources in this order:

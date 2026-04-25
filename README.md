@@ -27,6 +27,8 @@ More detail:
 
 - [Architecture](docs/architecture.md)
 - [Demo runbook](docs/demo-runbook.md)
+- [Technical report](docs/technical-report.md)
+- [Presentation outline](docs/presentation-outline.md)
 
 ## Local Setup
 

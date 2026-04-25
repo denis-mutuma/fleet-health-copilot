@@ -130,6 +130,8 @@ PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval
 PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests
 ```
 
+The pull request test workflow runs the same web, orchestrator, and MCP checks.
+
 You can also run the full local stack with Docker:
 
 ```bash

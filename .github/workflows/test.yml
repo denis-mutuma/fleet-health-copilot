@@ -27,3 +27,8 @@ jobs:
           .venv/bin/pip install -e "services/orchestrator[dev]"
       - name: Run orchestrator tests
         run: PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests
+      - name: Run MCP tests
+        run: |
+          PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry/tests
+          PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
+          PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests

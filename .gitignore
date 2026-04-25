@@ -21,3 +21,6 @@ infra/terraform/.terraform/
 # OS/Editor
 .DS_Store
 .vscode/
+
+# Next.js build output
+apps/web/.next/

@@ -69,6 +69,54 @@ def test_list_and_get_incidents_call_orchestrator(monkeypatch) -> None:
     assert incident == {"incident_id": "inc_123"}
 
 
+def test_update_incident_status_calls_orchestrator(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_patch(
+        url: str,
+        json: dict[str, object],
+        timeout: float
+    ) -> FakeResponse:
+        calls.append({"url": url, "json": json, "timeout": timeout})
+        return FakeResponse({"incident_id": "inc_123", "status": "resolved"})
+
+    monkeypatch.setattr(main.httpx, "patch", fake_patch)
+
+    result = main.update_incident_status(
+        incident_id="inc_123",
+        status="resolved",
+        base_url="http://orchestrator:8000/"
+    )
+
+    assert calls == [
+        {
+            "url": "http://orchestrator:8000/v1/incidents/inc_123",
+            "json": {"status": "resolved"},
+            "timeout": 10.0
+        }
+    ]
+    assert result == {"incident_id": "inc_123", "status": "resolved"}
+
+
+def test_get_maintenance_history_filters_incidents(monkeypatch) -> None:
+    def fake_get(url: str, timeout: float) -> FakeResponse:
+        return FakeResponse(
+            [
+                {"incident_id": "inc_1", "device_id": "robot-03"},
+                {"incident_id": "inc_2", "device_id": "robot-07"}
+            ]
+        )
+
+    monkeypatch.setattr(main.httpx, "get", fake_get)
+
+    result = main.get_maintenance_history(device_id="robot-03")
+
+    assert result == {
+        "device_id": "robot-03",
+        "incidents": [{"incident_id": "inc_1", "device_id": "robot-03"}]
+    }
+
+
 def test_create_mcp_server_explains_missing_runtime(monkeypatch) -> None:
     real_import = builtins.__import__
 

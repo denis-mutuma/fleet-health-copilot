@@ -12,7 +12,10 @@ flowchart LR
   orchestrator --> monitor["Monitor Agent"]
   monitor --> retriever["Retriever Agent"]
   retriever --> rag["Runbooks And Incident History"]
-  retriever --> reporter["Reporter Agent"]
+  retriever --> diagnosis["Diagnosis Agent"]
+  diagnosis --> planner["Planner Agent"]
+  planner --> verifier["Verifier Agent"]
+  verifier --> reporter["Reporter Agent"]
   reporter --> db["SQLite"]
   webApp --> detail["Incident Detail View"]
 ```
@@ -20,7 +23,7 @@ flowchart LR
 - `apps/web` is the Clerk-protected Next.js dashboard.
 - `services/orchestrator` is the FastAPI service for telemetry, RAG, orchestration, incidents, and metrics.
 - `services/orchestrator/data` contains local seed events and runbooks.
-- `services/mcp-*` contains early helper packages for future MCP tool integration.
+- `services/mcp-*` contains MCP tool servers for telemetry, retrieval, incident, and maintenance workflows.
 - `packages/contracts` contains JSON schemas for API contract alignment.
 
 More detail:
@@ -76,7 +79,7 @@ Start the web app:
 npm run web:dev
 ```
 
-Open `http://localhost:3000`, sign in, and use the simulation button to create a thermal incident.
+Open `http://localhost:3000`, sign in, and use the simulation button to create a thermal incident. The incident detail view shows confidence, agent trace, verification checks, evidence, and acknowledge/resolve actions.
 
 ## Demo Script
 
@@ -105,7 +108,7 @@ Run the end-to-end evaluation helper:
 .venv/bin/python services/orchestrator/scripts/evaluate_pipeline.py
 ```
 
-The evaluation helper posts each event to `/v1/orchestrate/event` and reports `true_positives`, `false_positives`, `false_negatives`, `true_negatives`, `precision`, `recall`, and `accuracy`.
+The evaluation helper posts each event to `/v1/orchestrate/event` and reports anomaly precision/recall, retrieval hit rate, agent task success rate, response latency, and time-to-diagnosis.
 
 Then refresh the dashboard and open an incident detail page to inspect summary, hypotheses, actions, and retrieved runbook or incident evidence.
 
@@ -121,9 +124,9 @@ ORCHESTRATOR_API_BASE_URL=http://127.0.0.1:8000 mcp-incidents
 
 Available tools:
 
-- `mcp-telemetry`: `query_device_events(device_id, limit)` delegates to `/v1/events`.
+- `mcp-telemetry`: `query_device_events(device_id, limit)` and `lookup_device_health(device_id)` delegate to `/v1/events`.
 - `mcp-retrieval`: `search_operational_context(query, limit)` delegates to `/v1/rag/search`.
-- `mcp-incidents`: `create_incident(event_payload)`, `search_incidents()`, and `read_incident(incident_id)` delegate to incident endpoints.
+- `mcp-incidents`: `create_incident(event_payload)`, `search_incidents()`, `read_incident(incident_id)`, `update_incident(incident_id, status)`, and `search_maintenance_history(device_id)` delegate to incident endpoints.
 
 ## Verification
 
@@ -152,6 +155,6 @@ The web container builds the Next.js app and serves it with `next start`. Supply
 
 ## Current Scope
 
-The current implementation is a concise MVP: deterministic agents, lexical RAG, SQLite persistence, and a Next.js dashboard. Retrieval uses a small backend interface in `services/orchestrator/src/fleet_health_orchestrator/rag.py`; the local default is lexical token matching, and an opt-in AWS S3 Vectors skeleton is ready for the future vector implementation.
+The current implementation is a concise capstone core: deterministic multi-agent orchestration, lexical RAG, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics, and AWS deployment scaffolding. Retrieval uses a small backend interface in `services/orchestrator/src/fleet_health_orchestrator/rag.py`; the local default is lexical token matching, and an opt-in AWS S3 Vectors skeleton is ready for the future vector implementation.
 
-Next capstone-depth steps are real MCP protocol tools, an AWS S3 Vectors retrieval backend, richer evaluation, and production-oriented deployment.
+Next capstone-depth steps are a real AWS S3 Vectors retrieval backend, optional LLM-backed report generation, and production deployment execution.

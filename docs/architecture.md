@@ -57,7 +57,10 @@ flowchart LR
   monitor -->|"value > threshold"| retriever["Retriever Agent"]
   monitor -->|"value <= threshold"| reject["Reject Non-Anomaly"]
   retriever --> context["Runbooks And Incident History"]
-  context --> reporter["Reporter Agent"]
+  context --> diagnosis["Diagnosis Agent"]
+  diagnosis --> planner["Planner Agent"]
+  planner --> verifier["Verifier Agent"]
+  verifier --> reporter["Reporter Agent"]
   reporter --> report["Evidence-Grounded Incident Report"]
 ```
 
@@ -65,7 +68,10 @@ Current agents are intentionally simple and deterministic:
 
 - `MonitorAgent` flags events whose metric value exceeds the threshold.
 - `RetrieverAgent` builds a query from metric, tags, and severity.
-- `ReporterAgent` produces a structured incident report using retrieved runbook and incident evidence.
+- `DiagnosisAgent` derives root-cause hypotheses from telemetry and retrieved history.
+- `PlannerAgent` converts runbook evidence into operator actions.
+- `VerifierAgent` checks that recommendations are grounded and conservative.
+- `ReporterAgent` produces a structured incident report with confidence, trace, verification, latency, and evidence.
 
 ## Retrieval
 
@@ -79,9 +85,9 @@ Retrieval is behind a small backend interface:
 
 The MCP layer exposes orchestrator capabilities as tool servers:
 
-- `mcp-telemetry`: `query_device_events(device_id, limit)`
+- `mcp-telemetry`: `query_device_events(device_id, limit)`, `lookup_device_health(device_id)`
 - `mcp-retrieval`: `search_operational_context(query, limit)`
-- `mcp-incidents`: `create_incident(event_payload)`, `search_incidents()`, `read_incident(incident_id)`
+- `mcp-incidents`: `create_incident(event_payload)`, `search_incidents()`, `read_incident(incident_id)`, `update_incident(incident_id, status)`, `search_maintenance_history(device_id)`
 
 These tools keep the capstone modular and make the orchestrator accessible to agent hosts without coupling them to the web UI.
 

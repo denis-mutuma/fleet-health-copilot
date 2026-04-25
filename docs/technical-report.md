@@ -56,7 +56,10 @@ The agent workflow is deterministic by design so the capstone demo remains expla
 | --- | --- | --- |
 | Monitor Agent | Decide whether a telemetry event is anomalous | Checks whether `value > threshold` |
 | Retriever Agent | Find relevant context | Builds a query from metric, tags, and severity |
-| Reporter Agent | Produce the incident report | Uses retrieved evidence to generate actions and evidence fields |
+| Diagnosis Agent | Explain likely causes | Derives hypotheses from telemetry, tags, and incident-history matches |
+| Planner Agent | Propose operator actions | Converts runbook excerpts into ordered maintenance actions |
+| Verifier Agent | Validate report safety and grounding | Confirms actions exist and flags missing runbook evidence |
+| Reporter Agent | Produce the incident report | Adds confidence, trace, verification, latency, actions, and evidence |
 
 This keeps responsibilities separated while leaving room for future LLM-backed diagnosis, planning, and verification agents.
 
@@ -74,16 +77,19 @@ This split keeps the MVP runnable without cloud dependencies while making the st
 The MCP layer exposes operational tools to external agent hosts:
 
 - `query_device_events(device_id, limit)`
+- `lookup_device_health(device_id)`
 - `search_operational_context(query, limit)`
 - `create_incident(event_payload)`
 - `search_incidents()`
 - `read_incident(incident_id)`
+- `update_incident(incident_id, status)`
+- `search_maintenance_history(device_id)`
 
 Each MCP package also keeps a plain Python helper API. This makes the services testable without requiring an MCP host during local CI.
 
 ## Evaluation
 
-The evaluation helper replays sample telemetry events through `/v1/orchestrate/event` and reports confusion-matrix metrics:
+The evaluation helper replays sample telemetry events through `/v1/orchestrate/event` and reports confusion-matrix and workflow metrics:
 
 - true positives,
 - false positives,
@@ -91,7 +97,11 @@ The evaluation helper replays sample telemetry events through `/v1/orchestrate/e
 - true negatives,
 - precision,
 - recall,
-- accuracy.
+- accuracy,
+- retrieval hit rate,
+- agent task success rate,
+- response latency,
+- time-to-diagnosis.
 
 The current seed set includes:
 
@@ -116,7 +126,7 @@ Known remaining gaps:
 
 - The AWS S3 Vectors backend is a skeleton, not a working vector integration.
 - Terraform is present but not yet connected to an end-to-end deployment.
-- The reporter is deterministic and not yet LLM-generated.
+- The agents are deterministic and not yet LLM-generated.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
 
 ## Capstone Requirement Mapping

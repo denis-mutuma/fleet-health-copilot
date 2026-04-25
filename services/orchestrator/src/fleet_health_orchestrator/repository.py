@@ -46,6 +46,21 @@ class FleetRepository:
                 )
                 """
             )
+            incident_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(incidents)").fetchall()
+            }
+            optional_columns = {
+                "confidence_score": "REAL NOT NULL DEFAULT 0.0",
+                "agent_trace_json": "TEXT NOT NULL DEFAULT '[]'",
+                "verification_json": "TEXT NOT NULL DEFAULT '{}'",
+                "latency_ms": "REAL NOT NULL DEFAULT 0.0"
+            }
+            for column, definition in optional_columns.items():
+                if column not in incident_columns:
+                    connection.execute(
+                        f"ALTER TABLE incidents ADD COLUMN {column} {definition}"
+                    )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS rag_documents (
@@ -57,6 +72,21 @@ class FleetRepository:
                 )
                 """
             )
+
+    def _incident_from_row(self, row: sqlite3.Row) -> IncidentReport:
+        return IncidentReport(
+            incident_id=row["incident_id"],
+            device_id=row["device_id"],
+            status=row["status"],
+            summary=row["summary"],
+            root_cause_hypotheses=json.loads(row["root_cause_hypotheses_json"]),
+            recommended_actions=json.loads(row["recommended_actions_json"]),
+            evidence=json.loads(row["evidence_json"]),
+            confidence_score=row["confidence_score"],
+            agent_trace=json.loads(row["agent_trace_json"]),
+            verification=json.loads(row["verification_json"]),
+            latency_ms=row["latency_ms"]
+        )
 
     def insert_event(self, event: TelemetryEvent) -> None:
         with self._connect() as connection:
@@ -109,8 +139,20 @@ class FleetRepository:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO incidents
-                (incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (
+                    incident_id,
+                    device_id,
+                    status,
+                    summary,
+                    root_cause_hypotheses_json,
+                    recommended_actions_json,
+                    evidence_json,
+                    confidence_score,
+                    agent_trace_json,
+                    verification_json,
+                    latency_ms
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     incident.incident_id,
@@ -119,7 +161,11 @@ class FleetRepository:
                     incident.summary,
                     json.dumps(incident.root_cause_hypotheses),
                     json.dumps(incident.recommended_actions),
-                    json.dumps(incident.evidence)
+                    json.dumps(incident.evidence),
+                    incident.confidence_score,
+                    json.dumps(incident.agent_trace),
+                    json.dumps(incident.verification),
+                    incident.latency_ms
                 )
             )
 
@@ -127,30 +173,19 @@ class FleetRepository:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json
+                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
                 FROM incidents
                 ORDER BY incident_id DESC
                 """
             ).fetchall()
 
-        return [
-            IncidentReport(
-                incident_id=row["incident_id"],
-                device_id=row["device_id"],
-                status=row["status"],
-                summary=row["summary"],
-                root_cause_hypotheses=json.loads(row["root_cause_hypotheses_json"]),
-                recommended_actions=json.loads(row["recommended_actions_json"]),
-                evidence=json.loads(row["evidence_json"])
-            )
-            for row in rows
-        ]
+        return [self._incident_from_row(row) for row in rows]
 
     def get_incident(self, incident_id: str) -> IncidentReport | None:
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json
+                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
                 FROM incidents
                 WHERE incident_id = ?
                 """,
@@ -160,15 +195,7 @@ class FleetRepository:
         if row is None:
             return None
 
-        return IncidentReport(
-            incident_id=row["incident_id"],
-            device_id=row["device_id"],
-            status=row["status"],
-            summary=row["summary"],
-            root_cause_hypotheses=json.loads(row["root_cause_hypotheses_json"]),
-            recommended_actions=json.loads(row["recommended_actions_json"]),
-            evidence=json.loads(row["evidence_json"])
-        )
+        return self._incident_from_row(row)
 
     def update_incident_status(
         self,

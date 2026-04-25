@@ -53,7 +53,7 @@ Open `http://localhost:3000`, sign in, and click the simulation button.
 Expected result:
 
 - Dashboard shows an open incident for `robot-03`.
-- Incident detail shows summary, hypotheses, recommended actions, and evidence.
+- Incident detail shows summary, hypotheses, recommended actions, confidence, agent trace, verification checks, latency, and evidence.
 - Evidence references retrieved runbooks or historical incidents, not synthetic fallback IDs.
 
 ## Evaluation Demo
@@ -77,11 +77,15 @@ Expected output shape:
   "true_negatives": 1.0,
   "precision": 1.0,
   "recall": 1.0,
-  "accuracy": 1.0
+  "accuracy": 1.0,
+  "retrieval_hit_rate": 1.0,
+  "agent_task_success_rate": 1.0,
+  "average_response_latency_ms": 12.3,
+  "average_time_to_diagnosis_ms": 1.2
 }
 ```
 
-The exact values can change if seed events change, but the important presentation point is that the metric names map to a real confusion matrix.
+The exact values can change if seed events change, but the important presentation point is that the metric names map to real confusion-matrix, retrieval, agent-success, and latency checks.
 
 ## MCP Tool Demo
 
@@ -96,10 +100,13 @@ ORCHESTRATOR_API_BASE_URL=http://127.0.0.1:8000 mcp-incidents
 Tools exposed:
 
 - `query_device_events(device_id, limit)`
+- `lookup_device_health(device_id)`
 - `search_operational_context(query, limit)`
 - `create_incident(event_payload)`
 - `search_incidents()`
 - `read_incident(incident_id)`
+- `update_incident(incident_id, status)`
+- `search_maintenance_history(device_id)`
 
 Use this part of the demo to explain how an external agent host could call operational tools without coupling directly to the dashboard.
 
@@ -138,6 +145,7 @@ PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents
 1. Fleet telemetry arrives as structured events.
 2. The monitor agent gates the workflow by checking anomaly thresholds.
 3. The retriever agent searches runbooks and incident history.
-4. The reporter agent generates an evidence-grounded incident report.
-5. The dashboard gives operators a simple incident operations view.
-6. MCP tools expose the same operational capabilities to external agent hosts.
+4. The diagnosis, planner, and verifier agents turn evidence into safe operator actions.
+5. The reporter agent generates an evidence-grounded incident report with confidence and traceability.
+6. The dashboard gives operators a simple incident operations view.
+7. MCP tools expose the same operational capabilities to external agent hosts.

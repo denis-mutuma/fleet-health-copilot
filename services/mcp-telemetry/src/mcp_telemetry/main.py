@@ -16,6 +16,22 @@ def query_latest_events(
     return {"device_id": device_id, "events": filtered}
 
 
+def lookup_device_status(
+    device_id: str, base_url: str = DEFAULT_ORCHESTRATOR_URL
+) -> dict[str, Any]:
+    events = query_latest_events(device_id=device_id, base_url=base_url, limit=1)["events"]
+    if not events:
+        return {"device_id": device_id, "status": "unknown", "latest_event": None}
+
+    latest_event = events[0]
+    is_anomalous = latest_event["value"] > latest_event["threshold"]
+    return {
+        "device_id": device_id,
+        "status": "anomalous" if is_anomalous else "nominal",
+        "latest_event": latest_event
+    }
+
+
 def create_mcp_server() -> Any:
     try:
         from mcp.server.fastmcp import FastMCP
@@ -34,6 +50,14 @@ def create_mcp_server() -> Any:
             device_id=device_id,
             base_url=os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL),
             limit=limit
+        )
+
+    @server.tool()
+    def lookup_device_health(device_id: str) -> dict[str, Any]:
+        """Return a simple device health status from the latest telemetry event."""
+        return lookup_device_status(
+            device_id=device_id,
+            base_url=os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
         )
 
     return server

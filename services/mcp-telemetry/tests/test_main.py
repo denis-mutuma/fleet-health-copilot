@@ -44,6 +44,32 @@ def test_query_latest_events_filters_device_and_strips_base_url(monkeypatch) -> 
     }
 
 
+def test_lookup_device_status_reports_latest_health(monkeypatch) -> None:
+    def fake_get(url: str, timeout: float) -> FakeResponse:
+        return FakeResponse(
+            [
+                {
+                    "event_id": "evt_1",
+                    "device_id": "robot-03",
+                    "value": 80.0,
+                    "threshold": 65.0
+                }
+            ]
+        )
+
+    monkeypatch.setattr(main.httpx, "get", fake_get)
+
+    result = main.lookup_device_status(device_id="robot-03")
+
+    assert result["status"] == "anomalous"
+    assert result["latest_event"] == {
+        "event_id": "evt_1",
+        "device_id": "robot-03",
+        "value": 80.0,
+        "threshold": 65.0
+    }
+
+
 def test_create_mcp_server_explains_missing_runtime(monkeypatch) -> None:
     real_import = builtins.__import__
 

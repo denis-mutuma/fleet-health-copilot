@@ -35,6 +35,32 @@ def get_incident(
     return response.json()
 
 
+def update_incident_status(
+    incident_id: str,
+    status: str,
+    base_url: str = DEFAULT_ORCHESTRATOR_URL
+) -> dict[str, Any]:
+    response = httpx.patch(
+        f"{base_url.rstrip('/')}/v1/incidents/{incident_id}",
+        json={"status": status},
+        timeout=10.0
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_maintenance_history(
+    device_id: str, base_url: str = DEFAULT_ORCHESTRATOR_URL
+) -> dict[str, Any]:
+    incidents = list_incidents(base_url=base_url)
+    return {
+        "device_id": device_id,
+        "incidents": [
+            incident for incident in incidents if incident.get("device_id") == device_id
+        ]
+    }
+
+
 def create_mcp_server() -> Any:
     try:
         from mcp.server.fastmcp import FastMCP
@@ -66,6 +92,23 @@ def create_mcp_server() -> Any:
         """Read one incident report from the orchestrator."""
         return get_incident(
             incident_id=incident_id,
+            base_url=os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
+        )
+
+    @server.tool()
+    def update_incident(incident_id: str, status: str) -> dict[str, Any]:
+        """Update an incident status to open, acknowledged, or resolved."""
+        return update_incident_status(
+            incident_id=incident_id,
+            status=status,
+            base_url=os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
+        )
+
+    @server.tool()
+    def search_maintenance_history(device_id: str) -> dict[str, Any]:
+        """List incident history for a device as maintenance context."""
+        return get_maintenance_history(
+            device_id=device_id,
             base_url=os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
         )
 

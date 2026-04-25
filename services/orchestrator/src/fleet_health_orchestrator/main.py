@@ -6,9 +6,12 @@ from fastapi import FastAPI, HTTPException
 
 from fleet_health_orchestrator.agents import (
     AgentOrchestrator,
+    DiagnosisAgent,
     MonitorAgent,
+    PlannerAgent,
     ReporterAgent,
-    RetrieverAgent
+    RetrieverAgent,
+    VerifierAgent
 )
 from fleet_health_orchestrator.models import (
     IncidentReport,
@@ -34,6 +37,9 @@ retrieval_backend = build_retrieval_backend(
 orchestrator = AgentOrchestrator(
     monitor=MonitorAgent(),
     retriever=RetrieverAgent(retrieval_backend=retrieval_backend),
+    diagnosis=DiagnosisAgent(),
+    planner=PlannerAgent(),
+    verifier=VerifierAgent(),
     reporter=ReporterAgent()
 )
 METRICS: dict[str, float] = {

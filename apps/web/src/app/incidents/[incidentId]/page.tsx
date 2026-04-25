@@ -51,6 +51,14 @@ export default async function IncidentDetailPage({
           </span>
         </p>
         <p>{incident.summary}</p>
+        <div className="report-metadata">
+          <span>Confidence {(incident.confidence_score * 100).toFixed(0)}%</span>
+          <span>Diagnosis {incident.latency_ms.toFixed(1)} ms</span>
+          <span>
+            Verification{" "}
+            {incident.verification.passed === false ? "flagged" : "passed"}
+          </span>
+        </div>
         <IncidentStatusActions
           incidentId={incident.incident_id}
           status={incident.status}
@@ -79,17 +87,51 @@ export default async function IncidentDetailPage({
       </section>
 
       <section className="card">
-        <h2>Evidence</h2>
-        {Object.entries(incident.evidence).map(([key, values]) => (
-          <div key={key} className="evidence-group">
-            <h3>{key}</h3>
+        <h2>Agent trace</h2>
+        <ol className="timeline-list">
+          {incident.agent_trace.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="card">
+        <h2>Verification</h2>
+        <ul>
+          {(incident.verification.checks ?? []).map((check) => (
+            <li key={check}>{check}</li>
+          ))}
+        </ul>
+        {(incident.verification.warnings ?? []).length > 0 ? (
+          <div className="warning-box">
+            <strong>Warnings</strong>
             <ul>
-              {values.map((value) => (
-                <li key={value}>{value}</li>
+              {(incident.verification.warnings ?? []).map((warning) => (
+                <li key={warning}>{warning}</li>
               ))}
             </ul>
           </div>
-        ))}
+        ) : null}
+      </section>
+
+      <section className="card">
+        <h2>Evidence</h2>
+        <div className="evidence-grid">
+          {Object.entries(incident.evidence).map(([key, values]) => (
+            <div key={key} className="evidence-group">
+              <h3>{key.replaceAll("_", " ")}</h3>
+              {values.length === 0 ? (
+                <p className="muted">No matches</p>
+              ) : (
+                <ul>
+                  {values.map((value) => (
+                    <li key={value}>{value}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
       </section>
     </main>
   );

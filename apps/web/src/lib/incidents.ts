@@ -8,6 +8,14 @@ export type IncidentReport = {
   root_cause_hypotheses: string[];
   recommended_actions: string[];
   evidence: Record<string, string[]>;
+  confidence_score: number;
+  agent_trace: string[];
+  verification: {
+    passed?: boolean;
+    checks?: string[];
+    warnings?: string[];
+  };
+  latency_ms: number;
 };
 
 type TelemetryEvent = {

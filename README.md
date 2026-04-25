@@ -64,7 +64,14 @@ Open `http://localhost:3000`, sign in, and use the simulation button to create a
 
 ## Demo Script
 
-With the orchestrator running, index sample runbooks:
+The local seed data covers two anomaly scenarios:
+
+- Battery thermal drift on `robot-03`.
+- Motor current spike on `robot-07`.
+
+It also includes one normal motor-current event so the evaluation can report true negatives.
+
+With the orchestrator running, index sample runbooks and historical incidents:
 
 ```bash
 .venv/bin/python services/orchestrator/scripts/index_documents.py
@@ -82,7 +89,9 @@ Run the end-to-end evaluation helper:
 .venv/bin/python services/orchestrator/scripts/evaluate_pipeline.py
 ```
 
-Then refresh the dashboard and open an incident detail page to inspect summary, hypotheses, actions, and retrieved evidence.
+The evaluation helper posts each event to `/v1/orchestrate/event` and reports `true_positives`, `false_positives`, `false_negatives`, `true_negatives`, `precision`, `recall`, and `accuracy`.
+
+Then refresh the dashboard and open an incident detail page to inspect summary, hypotheses, actions, and retrieved runbook or incident evidence.
 
 ## Verification
 

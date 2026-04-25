@@ -1,4 +1,6 @@
 import importlib
+import json
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -8,6 +10,16 @@ def _build_client(tmp_path, monkeypatch: object) -> TestClient:
     main_module = importlib.import_module("fleet_health_orchestrator.main")
     main_module = importlib.reload(main_module)
     return TestClient(main_module.app)
+
+
+def _load_evaluate_pipeline():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_pipeline.py"
+    spec = importlib.util.spec_from_file_location("evaluate_pipeline", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_health_endpoint(tmp_path, monkeypatch) -> None:
@@ -199,3 +211,44 @@ def test_metrics_endpoint(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert "events_ingested_total" in response.json()
+
+
+def test_evaluate_pipeline_reports_confusion_metrics(tmp_path, monkeypatch) -> None:
+    evaluate_pipeline = _load_evaluate_pipeline()
+    events_file = tmp_path / "events.jsonl"
+    events = [
+        {"event_id": "evt_tp", "value": 80.0, "threshold": 65.0},
+        {"event_id": "evt_fp", "value": 20.0, "threshold": 65.0},
+        {"event_id": "evt_fn", "value": 90.0, "threshold": 65.0},
+        {"event_id": "evt_tn", "value": 30.0, "threshold": 65.0}
+    ]
+    events_file.write_text(
+        "\n".join(json.dumps(event) for event in events),
+        encoding="utf-8"
+    )
+    statuses = iter([200, 200, 400, 400])
+
+    class FakeResponse:
+        def __init__(self, status_code: int) -> None:
+            self.status_code = status_code
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("unexpected non-evaluation status")
+
+    def fake_post(*args, **kwargs) -> FakeResponse:
+        return FakeResponse(next(statuses))
+
+    monkeypatch.setattr(evaluate_pipeline.httpx, "post", fake_post)
+
+    metrics = evaluate_pipeline.evaluate(
+        events_file=events_file,
+        base_url="http://127.0.0.1:8000"
+    )
+
+    assert metrics["true_positives"] == 1.0
+    assert metrics["false_positives"] == 1.0
+    assert metrics["false_negatives"] == 1.0
+    assert metrics["true_negatives"] == 1.0
+    assert metrics["precision"] == 0.5
+    assert metrics["recall"] == 0.5
+    assert metrics["accuracy"] == 0.5

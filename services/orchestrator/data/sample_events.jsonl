@@ -1,3 +1,4 @@
 {"event_id":"evt_2026_001","fleet_id":"fleet-alpha","device_id":"robot-03","timestamp":"2026-04-24T08:00:00Z","metric":"battery_temp_c","value":72.5,"threshold":65.0,"severity":"high","tags":["battery","thermal"]}
-{"event_id":"evt_2026_002","fleet_id":"fleet-alpha","device_id":"robot-07","timestamp":"2026-04-24T08:01:00Z","metric":"motor_current_a","value":39.0,"threshold":35.0,"severity":"medium","tags":["motor"]}
+{"event_id":"evt_2026_002","fleet_id":"fleet-alpha","device_id":"robot-07","timestamp":"2026-04-24T08:01:00Z","metric":"motor_current_a","value":39.0,"threshold":35.0,"severity":"medium","tags":["motor","current"]}
 {"event_id":"evt_2026_003","fleet_id":"fleet-alpha","device_id":"robot-03","timestamp":"2026-04-24T08:02:00Z","metric":"battery_temp_c","value":75.1,"threshold":65.0,"severity":"high","tags":["battery","thermal"]}
+{"event_id":"evt_2026_004","fleet_id":"fleet-alpha","device_id":"robot-11","timestamp":"2026-04-24T08:03:00Z","metric":"motor_current_a","value":28.0,"threshold":35.0,"severity":"low","tags":["motor","current"]}

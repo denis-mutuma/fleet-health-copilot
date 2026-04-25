@@ -11,12 +11,12 @@ Implemented:
 - Baseline artifact S3 bucket with encryption, tags, and public-access blocking.
 - ECR repositories for deployable container images.
 - Optional GitHub Actions OIDC role scaffolding for ECR image pushes.
+- Optional ECS Fargate scaffold for the web and orchestrator containers.
 - GitHub Actions workflows for PR tests, dev validation, and production Terraform validation.
 
 Not implemented yet:
 
 - Terraform remote state backend.
-- Deployed compute.
 - Managed database.
 - AWS S3 Vectors integration.
 
@@ -62,6 +62,19 @@ Apply only after credentials and state backend are configured:
 
 ```bash
 terraform -chdir=infra/terraform apply -var-file=env/dev.tfvars
+```
+
+Plan ECS compute after ECR images are published and a VPC is selected:
+
+```bash
+terraform -chdir=infra/terraform plan \
+  -var-file=env/dev.tfvars \
+  -var='enable_ecs=true' \
+  -var='vpc_id=vpc-xxxxxxxx' \
+  -var='public_subnet_ids=["subnet-aaaaaaaa","subnet-bbbbbbbb"]' \
+  -var='container_image_tags={web="GIT_SHA",orchestrator="GIT_SHA"}' \
+  -var='web_next_public_clerk_publishable_key=pk_test_xxx' \
+  -var='web_next_public_orchestrator_api_base_url=http://ALB_DNS_NAME'
 ```
 
 ## Remote State Plan
@@ -125,8 +138,8 @@ Add cloud resources in this order:
 1. **State backend**: S3 and DynamoDB lock table.
 2. **Artifact and container storage**: S3 artifacts bucket and ECR repositories. Current Terraform covers this baseline.
 3. **Image publishing**: GitHub Actions OIDC role and ECR push workflow.
-4. **Secrets**: Clerk keys and app configuration through a managed secret store.
-5. **Compute**: simplest viable container runtime for web and orchestrator.
+4. **Compute**: ECS Fargate cluster, web load balancer, private orchestrator discovery, and task definitions. Current Terraform includes an opt-in scaffold.
+5. **Secrets**: Clerk keys and app configuration through a managed secret store.
 6. **Data**: managed relational or file-backed store replacing local SQLite.
 7. **Retrieval**: AWS S3 Vectors backend behind `RetrievalBackend`.
 8. **Observability**: logs, metrics, and alarms for demo reliability.
@@ -138,9 +151,19 @@ For the capstone MVP, prefer a simple container deployment path:
 - ECR for images.
 - ECS Fargate for `web` and `orchestrator`.
 - Application Load Balancer routing to the web service.
-- Internal service discovery or private endpoint from web to orchestrator.
+- AWS Cloud Map private DNS from web to orchestrator.
 
 This keeps the deployment story production-like without introducing Kubernetes complexity.
+
+Current ECS scaffold:
+
+- Disabled by default with `enable_ecs = false`.
+- Creates one ECS cluster per environment.
+- Publishes the web service through an HTTP Application Load Balancer.
+- Registers the orchestrator as `orchestrator.<project>-<environment>.local`.
+- Creates CloudWatch log groups with 14-day retention.
+- Uses ECR images from the generated repositories and deploys tags from `container_image_tags`.
+- Accepts secret ARNs through `web_secret_arns` and `orchestrator_secret_arns`.
 
 ## Required Runtime Configuration
 
@@ -158,6 +181,12 @@ Orchestrator:
 - `FLEET_S3_VECTORS_BUCKET`
 - `FLEET_S3_VECTORS_INDEX`
 
+Terraform outputs when ECS is enabled:
+
+- `ecs_cluster_name`
+- `web_load_balancer_dns_name`
+- `orchestrator_service_discovery_name`
+
 ## Open Decisions
 
 - Whether the deployed persistence layer should be managed Postgres, DynamoDB, or a simpler S3-backed MVP store.
@@ -166,4 +195,4 @@ Orchestrator:
 
 ## Near-Term Next Step
 
-The next safe implementation step is a GitHub Actions image build workflow that authenticates with OIDC and pushes the `web` and `orchestrator` images to ECR. Keep it manually triggered until the AWS account, state backend, and environment protection rules are finalized.
+The next safe implementation step is deciding the managed persistence layer for deployed incidents and RAG documents. Until that is selected, the ECS orchestrator task uses local ephemeral SQLite and should be treated as demo-only.

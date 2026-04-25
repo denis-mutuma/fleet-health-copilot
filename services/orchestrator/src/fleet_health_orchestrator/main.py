@@ -16,7 +16,7 @@ from fleet_health_orchestrator.models import (
     RetrievalHit,
     TelemetryEvent
 )
-from fleet_health_orchestrator.rag import LexicalRetrievalBackend
+from fleet_health_orchestrator.rag import build_retrieval_backend
 from fleet_health_orchestrator.repository import FleetRepository
 
 app = FastAPI(title="Fleet Health Orchestrator", version="0.1.0")
@@ -25,7 +25,11 @@ DEFAULT_DB_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "fleet_health.db"
 )
 repository = FleetRepository(Path(os.getenv("FLEET_DB_PATH", str(DEFAULT_DB_PATH))))
-retrieval_backend = LexicalRetrievalBackend()
+retrieval_backend = build_retrieval_backend(
+    backend_name=os.getenv("FLEET_RETRIEVAL_BACKEND"),
+    s3_vectors_bucket=os.getenv("FLEET_S3_VECTORS_BUCKET"),
+    s3_vectors_index=os.getenv("FLEET_S3_VECTORS_INDEX")
+)
 orchestrator = AgentOrchestrator(
     monitor=MonitorAgent(),
     retriever=RetrieverAgent(retrieval_backend=retrieval_backend),

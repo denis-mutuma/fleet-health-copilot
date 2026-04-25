@@ -2,8 +2,13 @@ import importlib
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
-from fleet_health_orchestrator.rag import LexicalRetrievalBackend
+from fleet_health_orchestrator.rag import (
+    LexicalRetrievalBackend,
+    S3VectorsRetrievalBackend,
+    build_retrieval_backend
+)
 
 
 def _build_client(tmp_path, monkeypatch: object) -> TestClient:
@@ -50,6 +55,31 @@ def test_lexical_retrieval_backend_ranks_and_limits_hits() -> None:
 
     assert len(hits) == 1
     assert hits[0].document_id == "rb_motor_current_v1"
+
+
+def test_retrieval_backend_factory_defaults_to_lexical() -> None:
+    backend = build_retrieval_backend()
+
+    assert isinstance(backend, LexicalRetrievalBackend)
+
+
+def test_retrieval_backend_factory_builds_s3vectors_skeleton() -> None:
+    backend = build_retrieval_backend(
+        backend_name="s3vectors",
+        s3_vectors_bucket="fleet-health-vectors",
+        s3_vectors_index="runbooks"
+    )
+
+    assert isinstance(backend, S3VectorsRetrievalBackend)
+    assert backend.bucket_name == "fleet-health-vectors"
+    assert backend.index_name == "runbooks"
+    with pytest.raises(NotImplementedError):
+        backend.search(query="battery thermal", documents=[], limit=3)
+
+
+def test_retrieval_backend_factory_requires_s3vectors_config() -> None:
+    with pytest.raises(ValueError, match="FLEET_S3_VECTORS_BUCKET"):
+        build_retrieval_backend(backend_name="s3vectors")
 
 
 def test_health_endpoint(tmp_path, monkeypatch) -> None:

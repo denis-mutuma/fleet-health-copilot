@@ -16,6 +16,8 @@ class RetrievalBackend(Protocol):
 
 
 class LexicalRetrievalBackend:
+    name = "lexical"
+
     def search(
         self,
         query: str,
@@ -44,6 +46,52 @@ class LexicalRetrievalBackend:
             )
 
         return sorted(hits, key=lambda hit: hit.score, reverse=True)[:limit]
+
+
+class S3VectorsRetrievalBackend:
+    name = "s3vectors"
+
+    def __init__(self, bucket_name: str, index_name: str) -> None:
+        self.bucket_name = bucket_name
+        self.index_name = index_name
+
+    def search(
+        self,
+        query: str,
+        documents: list[dict[str, object]],
+        limit: int = 5
+    ) -> list[RetrievalHit]:
+        raise NotImplementedError(
+            "S3 Vectors retrieval is configured but not implemented yet. "
+            "Use FLEET_RETRIEVAL_BACKEND=lexical for local development."
+        )
+
+
+def build_retrieval_backend(
+    backend_name: str | None = None,
+    s3_vectors_bucket: str | None = None,
+    s3_vectors_index: str | None = None
+) -> RetrievalBackend:
+    normalized_name = (backend_name or "lexical").strip().lower()
+
+    if normalized_name == "lexical":
+        return LexicalRetrievalBackend()
+
+    if normalized_name == "s3vectors":
+        if not s3_vectors_bucket or not s3_vectors_index:
+            raise ValueError(
+                "FLEET_S3_VECTORS_BUCKET and FLEET_S3_VECTORS_INDEX are required "
+                "when FLEET_RETRIEVAL_BACKEND=s3vectors."
+            )
+        return S3VectorsRetrievalBackend(
+            bucket_name=s3_vectors_bucket,
+            index_name=s3_vectors_index
+        )
+
+    raise ValueError(
+        f"Unsupported retrieval backend '{backend_name}'. "
+        "Expected 'lexical' or 's3vectors'."
+    )
 
 
 def _tokenize(text: str) -> list[str]:

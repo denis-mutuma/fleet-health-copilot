@@ -46,6 +46,14 @@ cp apps/web/.env.example apps/web/.env.local
 
 Set real `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` values in `apps/web/.env.local`. The default orchestrator URL is `http://127.0.0.1:8000`.
 
+Optional orchestrator retrieval settings:
+
+- `FLEET_RETRIEVAL_BACKEND=lexical` keeps the local default lexical token search.
+- `FLEET_RETRIEVAL_BACKEND=s3vectors` selects the AWS S3 Vectors backend skeleton.
+- `FLEET_S3_VECTORS_BUCKET` and `FLEET_S3_VECTORS_INDEX` are required when `s3vectors` is selected.
+
+The S3 Vectors backend is intentionally opt-in and not implemented yet, so local development should keep the default `lexical` backend.
+
 ## Run Locally
 
 Start the orchestrator:
@@ -113,6 +121,6 @@ The current web container is suitable for local development and still requires C
 
 ## Current Scope
 
-The current implementation is a concise MVP: deterministic agents, lexical RAG, SQLite persistence, and a Next.js dashboard. Retrieval uses a small backend interface in `services/orchestrator/src/fleet_health_orchestrator/rag.py`; the local default is lexical token matching, and a future AWS S3 Vectors backend can implement the same `search()` contract.
+The current implementation is a concise MVP: deterministic agents, lexical RAG, SQLite persistence, and a Next.js dashboard. Retrieval uses a small backend interface in `services/orchestrator/src/fleet_health_orchestrator/rag.py`; the local default is lexical token matching, and an opt-in AWS S3 Vectors skeleton is ready for the future vector implementation.
 
 Next capstone-depth steps are real MCP protocol tools, an AWS S3 Vectors retrieval backend, richer evaluation, and production-oriented deployment.

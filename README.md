@@ -113,4 +113,6 @@ The current web container is suitable for local development and still requires C
 
 ## Current Scope
 
-The current implementation is a concise MVP: deterministic agents, lexical RAG, SQLite persistence, and a Next.js dashboard. Next capstone-depth steps are real MCP protocol tools, a vector retrieval abstraction with AWS S3 Vectors behind it, richer evaluation, and production-oriented deployment.
+The current implementation is a concise MVP: deterministic agents, lexical RAG, SQLite persistence, and a Next.js dashboard. Retrieval uses a small backend interface in `services/orchestrator/src/fleet_health_orchestrator/rag.py`; the local default is lexical token matching, and a future AWS S3 Vectors backend can implement the same `search()` contract.
+
+Next capstone-depth steps are real MCP protocol tools, an AWS S3 Vectors retrieval backend, richer evaluation, and production-oriented deployment.

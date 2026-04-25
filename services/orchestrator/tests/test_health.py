@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from fleet_health_orchestrator.rag import LexicalRetrievalBackend
 
 
 def _build_client(tmp_path, monkeypatch: object) -> TestClient:
@@ -20,6 +21,35 @@ def _load_evaluate_pipeline():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_lexical_retrieval_backend_ranks_and_limits_hits() -> None:
+    backend = LexicalRetrievalBackend()
+    documents = [
+        {
+            "document_id": "rb_motor_current_v1",
+            "source": "runbook",
+            "title": "Motor Current Spike Triage",
+            "content": "motor current current actuator",
+            "tags": ["motor", "current"]
+        },
+        {
+            "document_id": "rb_battery_thermal_v2",
+            "source": "runbook",
+            "title": "Battery Thermal Drift Response",
+            "content": "battery thermal cooling",
+            "tags": ["battery", "thermal"]
+        }
+    ]
+
+    hits = backend.search(
+        query="motor current spike",
+        documents=documents,
+        limit=1
+    )
+
+    assert len(hits) == 1
+    assert hits[0].document_id == "rb_motor_current_v1"
 
 
 def test_health_endpoint(tmp_path, monkeypatch) -> None:

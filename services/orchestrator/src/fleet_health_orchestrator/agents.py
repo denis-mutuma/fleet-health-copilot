@@ -1,9 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from fleet_health_orchestrator.models import IncidentReport, RetrievalHit, TelemetryEvent
-from fleet_health_orchestrator.rag import rank_documents
+from fleet_health_orchestrator.rag import LexicalRetrievalBackend, RetrievalBackend
 
 
 @dataclass
@@ -14,10 +14,11 @@ class MonitorAgent:
 
 @dataclass
 class RetrieverAgent:
+    retrieval_backend: RetrievalBackend = field(default_factory=LexicalRetrievalBackend)
+
     def retrieve(self, event: TelemetryEvent, rag_documents: list[dict[str, object]]) -> list[RetrievalHit]:
         query = f"{event.metric} {' '.join(event.tags)} {event.severity}"
-        return rank_documents(query=query, documents=rag_documents, limit=3)
-
+        return self.retrieval_backend.search(query=query, documents=rag_documents, limit=3)
 
 @dataclass
 class ReporterAgent:

@@ -16,7 +16,7 @@ from fleet_health_orchestrator.models import (
     RetrievalHit,
     TelemetryEvent
 )
-from fleet_health_orchestrator.rag import rank_documents
+from fleet_health_orchestrator.rag import LexicalRetrievalBackend
 from fleet_health_orchestrator.repository import FleetRepository
 
 app = FastAPI(title="Fleet Health Orchestrator", version="0.1.0")
@@ -25,9 +25,10 @@ DEFAULT_DB_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "fleet_health.db"
 )
 repository = FleetRepository(Path(os.getenv("FLEET_DB_PATH", str(DEFAULT_DB_PATH))))
+retrieval_backend = LexicalRetrievalBackend()
 orchestrator = AgentOrchestrator(
     monitor=MonitorAgent(),
-    retriever=RetrieverAgent(),
+    retriever=RetrieverAgent(retrieval_backend=retrieval_backend),
     reporter=ReporterAgent()
 )
 METRICS: dict[str, float] = {
@@ -102,7 +103,7 @@ def upsert_rag_document(document: RagDocument) -> RagDocument:
 def rag_search(query: str, limit: int = 5) -> list[RetrievalHit]:
     started_at = perf_counter()
     documents = repository.list_rag_documents()
-    hits = rank_documents(query=query, documents=documents, limit=limit)
+    hits = retrieval_backend.search(query=query, documents=documents, limit=limit)
     METRICS["rag_queries_total"] += 1
     METRICS["rag_query_latency_ms_last"] = (perf_counter() - started_at) * 1000
     return hits

@@ -1,7 +1,9 @@
+export type IncidentStatus = "open" | "acknowledged" | "resolved";
+
 export type IncidentReport = {
   incident_id: string;
   device_id: string;
-  status: "open" | "acknowledged" | "resolved";
+  status: IncidentStatus;
   summary: string;
   root_cause_hypotheses: string[];
   recommended_actions: string[];
@@ -76,6 +78,19 @@ export async function getIncident(
     }
     throw error;
   }
+}
+
+export async function updateIncidentStatus(
+  incidentId: string,
+  status: IncidentStatus
+): Promise<IncidentReport> {
+  return orchestratorRequest<IncidentReport>(
+    `/v1/incidents/${encodeURIComponent(incidentId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    }
+  );
 }
 
 function buildCanonicalEvent(): TelemetryEvent {

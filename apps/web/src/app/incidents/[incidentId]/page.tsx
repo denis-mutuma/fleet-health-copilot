@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getIncident, type IncidentReport } from "@/lib/incidents";
+import IncidentStatusActions from "@/app/components/incident-status-actions";
+
+function statusLabel(status: IncidentReport["status"]): string {
+  return status.toUpperCase();
+}
 
 export default async function IncidentDetailPage({
   params
@@ -40,10 +45,16 @@ export default async function IncidentDetailPage({
         <p className="eyebrow">Incident report</p>
         <h1>{incident.incident_id}</h1>
         <p>
-          Device: <strong>{incident.device_id}</strong> · Status:{" "}
-          <strong>{incident.status.toUpperCase()}</strong>
+          Device: <strong>{incident.device_id}</strong>{" "}
+          <span className={`status-badge status-${incident.status}`}>
+            {statusLabel(incident.status)}
+          </span>
         </p>
         <p>{incident.summary}</p>
+        <IncidentStatusActions
+          incidentId={incident.incident_id}
+          status={incident.status}
+        />
         <p>
           <Link href="/">Back to dashboard</Link>
         </p>

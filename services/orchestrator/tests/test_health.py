@@ -198,6 +198,56 @@ def test_get_incident_by_id_returns_404_for_unknown_id(tmp_path, monkeypatch) ->
     assert response.json()["detail"] == "Incident not found."
 
 
+def test_update_incident_status(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    create_response = client.post(
+        "/v1/orchestrate/event",
+        json={
+            "event_id": "evt_status_1",
+            "fleet_id": "fleet-alpha",
+            "device_id": "robot-03",
+            "timestamp": "2026-04-24T08:00:00Z",
+            "metric": "battery_temp_c",
+            "value": 80.0,
+            "threshold": 65.0,
+            "severity": "high",
+            "tags": ["battery", "thermal"]
+        }
+    )
+    incident_id = create_response.json()["incident_id"]
+
+    response = client.patch(
+        f"/v1/incidents/{incident_id}",
+        json={"status": "acknowledged"}
+    )
+    lookup_response = client.get(f"/v1/incidents/{incident_id}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "acknowledged"
+    assert lookup_response.json()["status"] == "acknowledged"
+
+
+def test_update_incident_status_returns_404_for_unknown_id(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    response = client.patch(
+        "/v1/incidents/inc_missing",
+        json={"status": "resolved"}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Incident not found."
+
+
+def test_update_incident_status_rejects_unknown_status(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    response = client.patch(
+        "/v1/incidents/inc_missing",
+        json={"status": "closed"}
+    )
+
+    assert response.status_code == 422
+
+
 def test_orchestration_rejects_non_anomalous_event(tmp_path, monkeypatch) -> None:
     client = _build_client(tmp_path, monkeypatch)
     response = client.post(

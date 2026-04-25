@@ -26,6 +26,10 @@ class IncidentReport(BaseModel):
     evidence: dict[str, list[str]]
 
 
+class IncidentStatusUpdate(BaseModel):
+    status: Literal["open", "acknowledged", "resolved"]
+
+
 class RagDocument(BaseModel):
     document_id: str
     source: Literal["runbook", "incident", "manual", "note"]

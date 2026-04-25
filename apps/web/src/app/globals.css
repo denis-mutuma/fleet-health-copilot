@@ -6,6 +6,9 @@
   --muted: #4b5563;
   --accent: #10a37f;
   --border: #e5e7eb;
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --success: #047857;
 }
 
 * {
@@ -73,8 +76,14 @@ body {
   cursor: not-allowed;
 }
 
+.secondary-button {
+  background: #ffffff;
+  border-color: var(--border);
+  color: var(--text);
+}
+
 .error {
-  color: #b91c1c;
+  color: var(--danger);
   margin: 8px 0 0;
 }
 
@@ -94,22 +103,65 @@ body {
   border-radius: 12px;
 }
 
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.section-heading h2,
+.section-heading p {
+  margin: 0;
+}
+
 .card ul {
   margin: 0;
   padding-left: 20px;
 }
 
+.stats-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 32px;
+}
+
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.stat-value {
+  display: block;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .incident-list {
   margin: 0;
-  padding-left: 20px;
+  padding: 0;
+  list-style: none;
 }
 
 .incident-list-item {
-  margin-bottom: 8px;
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
 }
 
 .incident-list-item a {
   color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   text-decoration: none;
 }
 
@@ -121,6 +173,48 @@ body {
   color: var(--muted);
 }
 
+.incident-summary {
+  color: var(--muted);
+}
+
+.status-badge {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-left: 8px;
+  padding: 3px 8px;
+  vertical-align: middle;
+}
+
+.status-open {
+  color: var(--danger);
+}
+
+.status-acknowledged {
+  color: var(--warning);
+}
+
+.status-resolved {
+  color: var(--success);
+}
+
+.actions-panel {
+  margin: 18px 0;
+}
+
 .evidence-group h3 {
   margin-bottom: 8px;
+}
+
+@media (max-width: 720px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-heading {
+    flex-direction: column;
+  }
 }

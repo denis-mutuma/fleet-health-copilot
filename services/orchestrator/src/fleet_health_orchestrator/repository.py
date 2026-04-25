@@ -170,6 +170,26 @@ class FleetRepository:
             evidence=json.loads(row["evidence_json"])
         )
 
+    def update_incident_status(
+        self,
+        incident_id: str,
+        status: str
+    ) -> IncidentReport | None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE incidents
+                SET status = ?
+                WHERE incident_id = ?
+                """,
+                (status, incident_id)
+            )
+
+        if cursor.rowcount == 0:
+            return None
+
+        return self.get_incident(incident_id)
+
     def insert_rag_document(
         self,
         document_id: str,

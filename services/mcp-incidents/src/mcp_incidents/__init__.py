@@ -1,0 +1,1 @@
+"""Incidents MCP service scaffold."""

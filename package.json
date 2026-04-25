@@ -1,0 +1,15 @@
+{
+  "name": "fleet-health-copilot",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "web:dev": "npm --workspace apps/web run dev",
+    "web:build": "npm --workspace apps/web run build",
+    "web:start": "npm --workspace apps/web run start",
+    "web:lint": "npm --workspace apps/web run lint"
+  }
+}

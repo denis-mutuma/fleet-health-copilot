@@ -1,0 +1,23 @@
+# Node
+node_modules/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Env files
+.env
+*.env.local
+
+# Terraform generated files
+infra/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+
+# Local data artifacts
+*.db
+
+# OS/Editor
+.DS_Store
+.vscode/

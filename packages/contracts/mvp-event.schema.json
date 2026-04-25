@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fleet-health.dev/contracts/mvp-event.schema.json",
+  "title": "TelemetryEvent",
+  "type": "object",
+  "required": [
+    "event_id",
+    "fleet_id",
+    "device_id",
+    "timestamp",
+    "metric",
+    "value",
+    "threshold",
+    "severity"
+  ],
+  "properties": {
+    "event_id": { "type": "string" },
+    "fleet_id": { "type": "string" },
+    "device_id": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "metric": { "type": "string" },
+    "value": { "type": "number" },
+    "threshold": { "type": "number" },
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

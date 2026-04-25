@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fleet-health.dev/contracts/incident-report.schema.json",
+  "title": "IncidentReport",
+  "type": "object",
+  "required": [
+    "incident_id",
+    "device_id",
+    "status",
+    "summary",
+    "root_cause_hypotheses",
+    "recommended_actions",
+    "evidence"
+  ],
+  "properties": {
+    "incident_id": { "type": "string" },
+    "device_id": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["open", "acknowledged", "resolved"]
+    },
+    "summary": { "type": "string" },
+    "root_cause_hypotheses": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "recommended_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}

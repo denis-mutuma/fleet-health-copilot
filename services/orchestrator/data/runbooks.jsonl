@@ -1,0 +1,2 @@
+{"document_id":"rb_battery_thermal_v2","source":"runbook","title":"Battery Thermal Drift Response","content":"If battery temperature exceeds threshold repeatedly, reduce duty cycle, inspect cooling ducts, and schedule maintenance within 24 hours.","tags":["battery","thermal","safety"]}
+{"document_id":"rb_motor_current_v1","source":"runbook","title":"Motor Current Spike Triage","content":"For sustained motor current spikes, inspect load profile, check mechanical resistance, and verify actuator health.","tags":["motor","current","maintenance"]}

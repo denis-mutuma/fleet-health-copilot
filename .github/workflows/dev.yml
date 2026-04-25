@@ -1,0 +1,27 @@
+name: dev
+
+on:
+  push:
+    branches: ["develop", "feat/**"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install web dependencies
+        run: npm ci --workspace apps/web
+      - name: Lint web
+        run: npm run web:lint
+      - name: Install orchestrator dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -e "services/orchestrator[dev]"
+      - name: Run orchestrator tests
+        run: PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests

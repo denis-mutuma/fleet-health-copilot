@@ -1,4 +1,8 @@
 locals {
+  orchestrator_data_mount_path = "/data"
+  orchestrator_efs_enabled     = var.enable_ecs && var.enable_orchestrator_efs
+  orchestrator_db_path         = local.orchestrator_efs_enabled ? "${local.orchestrator_data_mount_path}/fleet-health.db" : lookup(var.orchestrator_environment, "FLEET_DB_PATH", "/tmp/fleet-health.db")
+
   ecs_services = {
     web = {
       cpu       = 512
@@ -24,7 +28,7 @@ locals {
       port        = 8000
       image       = "${aws_ecr_repository.service["orchestrator"].repository_url}:${lookup(var.container_image_tags, "orchestrator", "latest")}"
       log_group   = "/ecs/${local.name_prefix}/orchestrator"
-      environment = var.orchestrator_environment
+      environment = merge(var.orchestrator_environment, { FLEET_DB_PATH = local.orchestrator_db_path })
       secrets     = var.orchestrator_secret_arns
     }
   }
@@ -90,6 +94,33 @@ resource "aws_iam_role" "ecs_task" {
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume_role.json
 
   tags = local.common_tags
+}
+
+data "aws_iam_policy_document" "ecs_task_efs_access" {
+  count = local.orchestrator_efs_enabled ? 1 : 0
+
+  statement {
+    actions = [
+      "elasticfilesystem:ClientMount",
+      "elasticfilesystem:ClientWrite"
+    ]
+    effect    = "Allow"
+    resources = [aws_efs_file_system.orchestrator[0].arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "elasticfilesystem:AccessPointArn"
+      values   = [aws_efs_access_point.orchestrator[0].arn]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "ecs_task_efs_access" {
+  count = local.orchestrator_efs_enabled ? 1 : 0
+
+  name   = "${local.name_prefix}-ecs-efs-access"
+  role   = aws_iam_role.ecs_task[0].id
+  policy = data.aws_iam_policy_document.ecs_task_efs_access[0].json
 }
 
 resource "aws_cloudwatch_log_group" "service" {
@@ -225,6 +256,88 @@ resource "aws_security_group" "orchestrator" {
   tags = local.common_tags
 }
 
+resource "aws_security_group" "efs" {
+  count = local.orchestrator_efs_enabled ? 1 : 0
+
+  name        = "${local.name_prefix}-efs"
+  description = "Allow orchestrator tasks to mount durable EFS storage."
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description     = "NFS from orchestrator tasks"
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.orchestrator[0].id]
+  }
+
+  egress {
+    description = "Outbound EFS traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_efs_file_system" "orchestrator" {
+  count = local.orchestrator_efs_enabled ? 1 : 0
+
+  creation_token = "${local.name_prefix}-orchestrator"
+  encrypted      = true
+
+  lifecycle_policy {
+    transition_to_ia = "AFTER_30_DAYS"
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-orchestrator"
+  })
+}
+
+resource "aws_efs_backup_policy" "orchestrator" {
+  count = local.orchestrator_efs_enabled ? 1 : 0
+
+  file_system_id = aws_efs_file_system.orchestrator[0].id
+
+  backup_policy {
+    status = "ENABLED"
+  }
+}
+
+resource "aws_efs_access_point" "orchestrator" {
+  count = local.orchestrator_efs_enabled ? 1 : 0
+
+  file_system_id = aws_efs_file_system.orchestrator[0].id
+
+  posix_user {
+    gid = 1000
+    uid = 1000
+  }
+
+  root_directory {
+    path = "/fleet-health"
+
+    creation_info {
+      owner_gid   = 1000
+      owner_uid   = 1000
+      permissions = "0755"
+    }
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_efs_mount_target" "orchestrator" {
+  for_each = local.orchestrator_efs_enabled ? toset(var.public_subnet_ids) : toset([])
+
+  file_system_id  = aws_efs_file_system.orchestrator[0].id
+  security_groups = [aws_security_group.efs[0].id]
+  subnet_id       = each.value
+}
+
 resource "aws_lb" "web" {
   count = var.enable_ecs ? 1 : 0
 
@@ -295,6 +408,13 @@ resource "aws_ecs_task_definition" "service" {
           protocol      = "tcp"
         }
       ]
+      mountPoints = each.key == "orchestrator" && local.orchestrator_efs_enabled ? [
+        {
+          sourceVolume  = "orchestrator-data"
+          containerPath = local.orchestrator_data_mount_path
+          readOnly      = false
+        }
+      ] : []
       environment = [
         for name, value in each.value.environment : {
           name  = name
@@ -317,6 +437,24 @@ resource "aws_ecs_task_definition" "service" {
       }
     }
   ])
+
+  dynamic "volume" {
+    for_each = each.key == "orchestrator" && local.orchestrator_efs_enabled ? [1] : []
+
+    content {
+      name = "orchestrator-data"
+
+      efs_volume_configuration {
+        file_system_id     = aws_efs_file_system.orchestrator[0].id
+        transit_encryption = "ENABLED"
+
+        authorization_config {
+          access_point_id = aws_efs_access_point.orchestrator[0].id
+          iam             = "ENABLED"
+        }
+      }
+    }
+  }
 
   depends_on = [
     aws_cloudwatch_log_group.service
@@ -361,8 +499,10 @@ resource "aws_ecs_service" "service" {
   }
 
   depends_on = [
+    aws_efs_mount_target.orchestrator,
     aws_lb_listener.web_http,
-    aws_iam_role_policy_attachment.ecs_task_execution
+    aws_iam_role_policy_attachment.ecs_task_execution,
+    aws_iam_role_policy.ecs_task_efs_access
   ]
 
   tags = local.common_tags

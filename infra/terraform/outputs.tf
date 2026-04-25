@@ -29,3 +29,13 @@ output "orchestrator_service_discovery_name" {
   value       = var.enable_ecs ? "orchestrator.${aws_service_discovery_private_dns_namespace.main[0].name}" : null
   description = "Private DNS name for the orchestrator service when ECS is enabled."
 }
+
+output "orchestrator_efs_file_system_id" {
+  value       = local.orchestrator_efs_enabled ? aws_efs_file_system.orchestrator[0].id : null
+  description = "EFS file system ID for durable orchestrator SQLite storage when enabled."
+}
+
+output "orchestrator_database_path" {
+  value       = var.enable_ecs ? local.orchestrator_db_path : null
+  description = "Database path configured for the orchestrator task when ECS is enabled."
+}

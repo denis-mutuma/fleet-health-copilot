@@ -86,6 +86,12 @@ variable "ecs_desired_count" {
   default     = 1
 }
 
+variable "enable_orchestrator_efs" {
+  type        = bool
+  description = "Whether to mount durable EFS storage for the orchestrator SQLite database when ECS is enabled."
+  default     = true
+}
+
 variable "web_next_public_clerk_publishable_key" {
   type        = string
   description = "Clerk publishable key exposed to the browser for the web service."

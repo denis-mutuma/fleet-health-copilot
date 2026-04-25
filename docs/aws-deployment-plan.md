@@ -77,6 +77,8 @@ terraform -chdir=infra/terraform plan \
   -var='web_next_public_orchestrator_api_base_url=http://ALB_DNS_NAME'
 ```
 
+By default, ECS also creates an encrypted EFS file system for the orchestrator SQLite database. Disable it with `enable_orchestrator_efs=false` only for throwaway environments.
+
 ## Remote State Plan
 
 Before applying real infrastructure, create a separate Terraform state bootstrap outside this root module:
@@ -140,7 +142,7 @@ Add cloud resources in this order:
 3. **Image publishing**: GitHub Actions OIDC role and ECR push workflow.
 4. **Compute**: ECS Fargate cluster, web load balancer, private orchestrator discovery, and task definitions. Current Terraform includes an opt-in scaffold.
 5. **Secrets**: Clerk keys and app configuration through a managed secret store.
-6. **Data**: managed relational or file-backed store replacing local SQLite.
+6. **Data**: encrypted EFS for MVP SQLite durability now; managed Postgres or DynamoDB remains the recommended production-grade next step.
 7. **Retrieval**: AWS S3 Vectors backend behind `RetrievalBackend`.
 8. **Observability**: logs, metrics, and alarms for demo reliability.
 
@@ -164,6 +166,21 @@ Current ECS scaffold:
 - Creates CloudWatch log groups with 14-day retention.
 - Uses ECR images from the generated repositories and deploys tags from `container_image_tags`.
 - Accepts secret ARNs through `web_secret_arns` and `orchestrator_secret_arns`.
+- Mounts encrypted EFS storage into the orchestrator task at `/data` when `enable_orchestrator_efs=true`.
+
+## MVP Data Persistence
+
+The orchestrator already stores events, incidents, and RAG documents in SQLite. For a low-risk capstone deployment, Terraform mounts an encrypted EFS file system into the ECS orchestrator task and sets:
+
+```bash
+FLEET_DB_PATH=/data/fleet-health.db
+```
+
+This avoids code churn while making incident history survive task restarts and redeploys. Treat this as an MVP persistence mode:
+
+- Keep `ecs_desired_count = 1` while using SQLite on EFS.
+- Use the EFS outputs to confirm the mounted file system for each environment.
+- Move to managed Postgres or DynamoDB before scaling orchestrator writers horizontally.
 
 ## Required Runtime Configuration
 
@@ -186,6 +203,8 @@ Terraform outputs when ECS is enabled:
 - `ecs_cluster_name`
 - `web_load_balancer_dns_name`
 - `orchestrator_service_discovery_name`
+- `orchestrator_efs_file_system_id`
+- `orchestrator_database_path`
 
 ## Open Decisions
 
@@ -195,4 +214,4 @@ Terraform outputs when ECS is enabled:
 
 ## Near-Term Next Step
 
-The next safe implementation step is deciding the managed persistence layer for deployed incidents and RAG documents. Until that is selected, the ECS orchestrator task uses local ephemeral SQLite and should be treated as demo-only.
+The next safe implementation step is adding Secrets Manager or SSM parameter scaffolding for Clerk and runtime configuration, then wiring those secret ARNs into the ECS task definitions.

@@ -43,6 +43,18 @@ variable "github_repository" {
   default     = ""
 }
 
+variable "enable_managed_secrets" {
+  type        = bool
+  description = "Whether to create AWS Secrets Manager placeholders for runtime secrets."
+  default     = true
+}
+
+variable "managed_secret_names" {
+  type        = set(string)
+  description = "Runtime secret environment variable names to create as AWS Secrets Manager placeholders. Values are populated outside Terraform."
+  default     = ["CLERK_SECRET_KEY"]
+}
+
 variable "enable_ecs" {
   type        = bool
   description = "Whether to create the ECS Fargate runtime scaffold."

@@ -15,6 +15,11 @@ output "github_actions_role_arn" {
   description = "GitHub Actions role ARN for image push workflows, when OIDC is enabled."
 }
 
+output "managed_secret_arns" {
+  value       = local.managed_secret_arns
+  description = "Secrets Manager secret ARNs by runtime environment variable name. Populate values outside Terraform."
+}
+
 output "ecs_cluster_name" {
   value       = var.enable_ecs ? aws_ecs_cluster.main[0].name : null
   description = "ECS cluster name when the Fargate scaffold is enabled."

@@ -12,6 +12,7 @@ Implemented:
 - ECR repositories for deployable container images.
 - Optional GitHub Actions OIDC role scaffolding for ECR image pushes.
 - Optional ECS Fargate scaffold for the web and orchestrator containers.
+- Optional Secrets Manager placeholders for runtime secrets.
 - GitHub Actions workflows for PR tests, dev validation, and production Terraform validation.
 
 Not implemented yet:
@@ -79,6 +80,14 @@ terraform -chdir=infra/terraform plan \
 
 By default, ECS also creates an encrypted EFS file system for the orchestrator SQLite database. Disable it with `enable_orchestrator_efs=false` only for throwaway environments.
 
+Terraform creates Secrets Manager secret placeholders for names in `managed_secret_names` without storing secret values in state. Populate values after apply, for example:
+
+```bash
+aws secretsmanager put-secret-value \
+  --secret-id fleet-health-copilot-dev/CLERK_SECRET_KEY \
+  --secret-string "$CLERK_SECRET_KEY"
+```
+
 ## Remote State Plan
 
 Before applying real infrastructure, create a separate Terraform state bootstrap outside this root module:
@@ -141,7 +150,7 @@ Add cloud resources in this order:
 2. **Artifact and container storage**: S3 artifacts bucket and ECR repositories. Current Terraform covers this baseline.
 3. **Image publishing**: GitHub Actions OIDC role and ECR push workflow.
 4. **Compute**: ECS Fargate cluster, web load balancer, private orchestrator discovery, and task definitions. Current Terraform includes an opt-in scaffold.
-5. **Secrets**: Clerk keys and app configuration through a managed secret store.
+5. **Secrets**: Clerk keys and app configuration through Secrets Manager placeholders. Current Terraform creates secret containers but leaves values to be populated outside Terraform.
 6. **Data**: encrypted EFS for MVP SQLite durability now; managed Postgres or DynamoDB remains the recommended production-grade next step.
 7. **Retrieval**: AWS S3 Vectors backend behind `RetrievalBackend`.
 8. **Observability**: logs, metrics, and alarms for demo reliability.
@@ -166,7 +175,26 @@ Current ECS scaffold:
 - Creates CloudWatch log groups with 14-day retention.
 - Uses ECR images from the generated repositories and deploys tags from `container_image_tags`.
 - Accepts secret ARNs through `web_secret_arns` and `orchestrator_secret_arns`.
+- Injects managed `CLERK_SECRET_KEY` into the web task by default when `enable_managed_secrets=true`.
 - Mounts encrypted EFS storage into the orchestrator task at `/data` when `enable_orchestrator_efs=true`.
+
+## Runtime Secrets
+
+Terraform creates Secrets Manager placeholders from `managed_secret_names`; it does not create secret versions or store secret values. This keeps sensitive values out of the repository and Terraform state.
+
+Default managed secret:
+
+- `CLERK_SECRET_KEY`: injected into the web ECS task as a secret environment variable.
+
+First-run sequence:
+
+1. Apply Terraform with `enable_managed_secrets=true`.
+2. Read `managed_secret_arns` from Terraform outputs.
+3. Populate the secret values with the AWS CLI or console.
+4. Publish images with `.github/workflows/publish-images.yml`.
+5. Enable or update ECS with the image tag and runtime config.
+
+If a secret already exists outside this module, pass its ARN through `web_secret_arns` or `orchestrator_secret_arns`. Explicit ARNs override generated managed secret ARNs for the same environment variable name.
 
 ## MVP Data Persistence
 
@@ -200,6 +228,7 @@ Orchestrator:
 
 Terraform outputs when ECS is enabled:
 
+- `managed_secret_arns`
 - `ecs_cluster_name`
 - `web_load_balancer_dns_name`
 - `orchestrator_service_discovery_name`
@@ -214,4 +243,4 @@ Terraform outputs when ECS is enabled:
 
 ## Near-Term Next Step
 
-The next safe implementation step is adding Secrets Manager or SSM parameter scaffolding for Clerk and runtime configuration, then wiring those secret ARNs into the ECS task definitions.
+The next safe implementation step is deployment automation: a manual `deploy-dev` GitHub Actions workflow that uses OIDC, published image tags, Terraform variables, and populated secret ARNs to run a dev environment plan/apply.

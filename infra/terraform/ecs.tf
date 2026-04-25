@@ -20,7 +20,7 @@ locals {
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY     = var.web_next_public_clerk_publishable_key
         }
       )
-      secrets = var.web_secret_arns
+      secrets = merge(local.managed_web_secret_arns, var.web_secret_arns)
     }
     orchestrator = {
       cpu         = 512
@@ -34,7 +34,7 @@ locals {
   }
 
   ecs_service_map    = var.enable_ecs ? local.ecs_services : {}
-  ecs_secret_arns    = concat(values(var.web_secret_arns), values(var.orchestrator_secret_arns))
+  ecs_secret_arns    = distinct(concat(values(local.managed_web_secret_arns), values(var.web_secret_arns), values(var.orchestrator_secret_arns)))
   ecs_secret_enabled = var.enable_ecs && length(local.ecs_secret_arns) > 0
 }
 

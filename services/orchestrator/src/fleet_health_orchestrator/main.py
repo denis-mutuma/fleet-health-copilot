@@ -78,6 +78,14 @@ def list_incidents() -> list[IncidentReport]:
     return repository.list_incidents()
 
 
+@app.get("/v1/incidents/{incident_id}", response_model=IncidentReport)
+def get_incident(incident_id: str) -> IncidentReport:
+    incident = repository.get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found.")
+    return incident
+
+
 @app.post("/v1/rag/documents", response_model=RagDocument)
 def upsert_rag_document(document: RagDocument) -> RagDocument:
     repository.insert_rag_document(

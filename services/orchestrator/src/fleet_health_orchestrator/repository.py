@@ -146,6 +146,30 @@ class FleetRepository:
             for row in rows
         ]
 
+    def get_incident(self, incident_id: str) -> IncidentReport | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json
+                FROM incidents
+                WHERE incident_id = ?
+                """,
+                (incident_id,)
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return IncidentReport(
+            incident_id=row["incident_id"],
+            device_id=row["device_id"],
+            status=row["status"],
+            summary=row["summary"],
+            root_cause_hypotheses=json.loads(row["root_cause_hypotheses_json"]),
+            recommended_actions=json.loads(row["recommended_actions_json"]),
+            evidence=json.loads(row["evidence_json"])
+        )
+
     def insert_rag_document(
         self,
         document_id: str,

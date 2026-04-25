@@ -21,6 +21,20 @@ class RetrieverAgent:
 
 @dataclass
 class ReporterAgent:
+    def _recommended_actions(self, hits: list[RetrievalHit]) -> list[str]:
+        runbook_hits = [hit for hit in hits if hit.source == "runbook"]
+        actions: list[str] = []
+
+        for hit in runbook_hits[:2]:
+            first_sentence = hit.excerpt.split(".")[0].strip()
+            if first_sentence:
+                actions.append(f"Follow {hit.document_id}: {first_sentence}.")
+
+        return actions or [
+            "Review recent telemetry for repeated threshold crossings",
+            "Have an operator inspect the device before returning to normal duty cycle"
+        ]
+
     def compose(self, event: TelemetryEvent, hits: list[RetrievalHit]) -> IncidentReport:
         runbooks = [hit.document_id for hit in hits if hit.source == "runbook"]
         matched_incidents = [hit.document_id for hit in hits if hit.source == "incident"]
@@ -30,13 +44,10 @@ class ReporterAgent:
             status="open",
             summary=f"{event.metric} exceeded threshold on {event.device_id}.",
             root_cause_hypotheses=["cooling degradation", "ambient overload"],
-            recommended_actions=[
-                "Reduce duty cycle by 20%",
-                "Schedule cooling system inspection within 24h"
-            ],
+            recommended_actions=self._recommended_actions(hits),
             evidence={
-                "matched_incidents": matched_incidents or ["inc_2025_102", "inc_2025_187"],
-                "runbooks": runbooks or ["rb_battery_thermal_v2"],
+                "matched_incidents": matched_incidents,
+                "runbooks": runbooks,
                 "generated_at": [datetime.now(UTC).isoformat()]
             }
         )

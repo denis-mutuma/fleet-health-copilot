@@ -19,6 +19,8 @@ jobs:
         run: npm ci --workspace apps/web
       - name: Lint web
         run: npm run web:lint
+      - name: Build web
+        run: npm run web:build
       - name: Install orchestrator dependencies
         run: |
           python -m venv .venv

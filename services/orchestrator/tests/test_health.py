@@ -88,6 +88,42 @@ def test_orchestration_endpoint(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["device_id"] == "robot-03"
+    assert response.json()["evidence"]["runbooks"] == ["rb_battery_thermal_v2"]
+    assert response.json()["recommended_actions"][0].startswith(
+        "Follow rb_battery_thermal_v2:"
+    )
+
+
+def test_get_incident_by_id(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    create_response = client.post(
+        "/v1/orchestrate/event",
+        json={
+            "event_id": "evt_lookup_1",
+            "fleet_id": "fleet-alpha",
+            "device_id": "robot-03",
+            "timestamp": "2026-04-24T08:00:00Z",
+            "metric": "battery_temp_c",
+            "value": 80.0,
+            "threshold": 65.0,
+            "severity": "high",
+            "tags": ["battery", "thermal"]
+        }
+    )
+    incident_id = create_response.json()["incident_id"]
+
+    response = client.get(f"/v1/incidents/{incident_id}")
+
+    assert response.status_code == 200
+    assert response.json()["incident_id"] == incident_id
+
+
+def test_get_incident_by_id_returns_404_for_unknown_id(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    response = client.get("/v1/incidents/inc_missing")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Incident not found."
 
 
 def test_orchestration_rejects_non_anomalous_event(tmp_path, monkeypatch) -> None:
@@ -111,7 +147,7 @@ def test_orchestration_rejects_non_anomalous_event(tmp_path, monkeypatch) -> Non
     assert response.json()["detail"] == "Event does not exceed threshold."
 
 
-def test_orchestration_uses_fallback_evidence_without_rag(tmp_path, monkeypatch) -> None:
+def test_orchestration_reports_empty_evidence_without_rag(tmp_path, monkeypatch) -> None:
     client = _build_client(tmp_path, monkeypatch)
     response = client.post(
         "/v1/orchestrate/event",
@@ -129,7 +165,12 @@ def test_orchestration_uses_fallback_evidence_without_rag(tmp_path, monkeypatch)
     )
 
     assert response.status_code == 200
-    assert response.json()["evidence"]["runbooks"] == ["rb_battery_thermal_v2"]
+    assert response.json()["evidence"]["runbooks"] == []
+    assert response.json()["evidence"]["matched_incidents"] == []
+    assert response.json()["recommended_actions"] == [
+        "Review recent telemetry for repeated threshold crossings",
+        "Have an operator inspect the device before returning to normal duty cycle"
+    ]
 
 
 def test_invalid_event_payload_returns_422(tmp_path, monkeypatch) -> None:

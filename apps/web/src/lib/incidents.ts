@@ -22,6 +22,15 @@ type TelemetryEvent = {
 
 const DEFAULT_ORCHESTRATOR_URL = "http://127.0.0.1:8000";
 
+class OrchestratorRequestError extends Error {
+  constructor(
+    readonly status: number,
+    statusText: string
+  ) {
+    super(`Orchestrator request failed (${status}): ${statusText}`);
+  }
+}
+
 function orchestratorBaseUrl(): string {
   const configuredUrl =
     process.env.ORCHESTRATOR_API_BASE_URL ??
@@ -44,9 +53,7 @@ async function orchestratorRequest<T>(
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Orchestrator request failed (${response.status}): ${response.statusText}`
-    );
+    throw new OrchestratorRequestError(response.status, response.statusText);
   }
 
   return (await response.json()) as T;
@@ -59,8 +66,16 @@ export async function listIncidents(): Promise<IncidentReport[]> {
 export async function getIncident(
   incidentId: string
 ): Promise<IncidentReport | undefined> {
-  const incidents = await listIncidents();
-  return incidents.find((incident) => incident.incident_id === incidentId);
+  try {
+    return await orchestratorRequest<IncidentReport>(
+      `/v1/incidents/${encodeURIComponent(incidentId)}`
+    );
+  } catch (error) {
+    if (error instanceof OrchestratorRequestError && error.status === 404) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 function buildCanonicalEvent(): TelemetryEvent {

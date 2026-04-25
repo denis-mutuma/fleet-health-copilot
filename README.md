@@ -101,6 +101,16 @@ The evaluation helper posts each event to `/v1/orchestrate/event` and reports `t
 
 Then refresh the dashboard and open an incident detail page to inspect summary, hypotheses, actions, and retrieved runbook or incident evidence.
 
+## MCP Retrieval Tool
+
+`services/mcp-retrieval` exposes the first MCP tool surface for the capstone. It keeps the plain Python helper `retrieve_supporting_context()` and adds an MCP server command:
+
+```bash
+ORCHESTRATOR_API_BASE_URL=http://127.0.0.1:8000 mcp-retrieval
+```
+
+The MCP tool is `search_operational_context(query, limit)` and delegates to the orchestrator `/v1/rag/search` endpoint.
+
 ## Verification
 
 Run the main checks:
@@ -109,6 +119,7 @@ Run the main checks:
 npm run web:lint
 npm run web:build
 PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests
+PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
 ```
 
 You can also run the full local stack with Docker:

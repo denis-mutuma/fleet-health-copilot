@@ -101,15 +101,21 @@ The evaluation helper posts each event to `/v1/orchestrate/event` and reports `t
 
 Then refresh the dashboard and open an incident detail page to inspect summary, hypotheses, actions, and retrieved runbook or incident evidence.
 
-## MCP Retrieval Tool
+## MCP Tools
 
-`services/mcp-retrieval` exposes the first MCP tool surface for the capstone. It keeps the plain Python helper `retrieve_supporting_context()` and adds an MCP server command:
+The `services/mcp-*` packages keep plain Python helper functions and expose minimal MCP server commands:
 
 ```bash
+ORCHESTRATOR_API_BASE_URL=http://127.0.0.1:8000 mcp-telemetry
 ORCHESTRATOR_API_BASE_URL=http://127.0.0.1:8000 mcp-retrieval
+ORCHESTRATOR_API_BASE_URL=http://127.0.0.1:8000 mcp-incidents
 ```
 
-The MCP tool is `search_operational_context(query, limit)` and delegates to the orchestrator `/v1/rag/search` endpoint.
+Available tools:
+
+- `mcp-telemetry`: `query_device_events(device_id, limit)` delegates to `/v1/events`.
+- `mcp-retrieval`: `search_operational_context(query, limit)` delegates to `/v1/rag/search`.
+- `mcp-incidents`: `create_incident(event_payload)`, `search_incidents()`, and `read_incident(incident_id)` delegate to incident endpoints.
 
 ## Verification
 
@@ -119,7 +125,9 @@ Run the main checks:
 npm run web:lint
 npm run web:build
 PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests
+PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry/tests
 PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
+PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests
 ```
 
 You can also run the full local stack with Docker:

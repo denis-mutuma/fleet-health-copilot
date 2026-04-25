@@ -3,8 +3,12 @@ name = "mcp-telemetry"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-  "httpx>=0.27.0,<1.0.0"
+  "httpx>=0.27.0,<1.0.0",
+  "mcp"
 ]
+
+[project.scripts]
+mcp-telemetry = "mcp_telemetry.main:run_server"
 
 [build-system]
 requires = ["hatchling"]

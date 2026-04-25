@@ -46,6 +46,7 @@ The current system includes:
 - `services/mcp-incidents`: MCP tool server for creating and reading incident reports.
 - `services/orchestrator/data`: JSONL seed data for demo runbooks, incident history, and telemetry events.
 - `.github/workflows/test.yml`: Pull request quality gate for web, orchestrator, and MCP tests.
+- `infra/terraform`: AWS environment scaffold for dev/test/prod planning.
 
 ## Agent Design
 
@@ -140,3 +141,5 @@ Recommended next implementation steps:
 3. Add a deployed environment using Terraform and GitHub Actions.
 4. Expand the evaluation dataset beyond the current small seed set.
 5. Add a presentation deck using `docs/presentation-outline.md`.
+
+See `docs/aws-deployment-plan.md` for the staged AWS rollout plan.

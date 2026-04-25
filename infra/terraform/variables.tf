@@ -13,4 +13,15 @@ variable "aws_region" {
 variable "environment" {
   type        = string
   description = "Environment name: dev, test, prod."
+
+  validation {
+    condition     = contains(["dev", "test", "prod"], var.environment)
+    error_message = "Environment must be one of: dev, test, prod."
+  }
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "Additional tags applied to all resources."
+  default     = {}
 }

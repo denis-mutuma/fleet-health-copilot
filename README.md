@@ -29,6 +29,7 @@ More detail:
 - [Demo runbook](docs/demo-runbook.md)
 - [Technical report](docs/technical-report.md)
 - [Presentation outline](docs/presentation-outline.md)
+- [AWS deployment plan](docs/aws-deployment-plan.md)
 
 ## Local Setup
 

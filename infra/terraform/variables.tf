@@ -25,3 +25,15 @@ variable "tags" {
   description = "Additional tags applied to all resources."
   default     = {}
 }
+
+variable "container_repositories" {
+  type        = set(string)
+  description = "Container image repositories to create in ECR."
+  default     = ["web", "orchestrator"]
+}
+
+variable "github_repository" {
+  type        = string
+  description = "GitHub repository slug allowed to assume the deploy role, for example owner/repo. Leave empty to skip GitHub OIDC resources."
+  default     = ""
+}

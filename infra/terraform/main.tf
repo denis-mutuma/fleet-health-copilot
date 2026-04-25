@@ -8,6 +8,7 @@ locals {
     },
     var.tags
   )
+  github_oidc_enabled = var.github_repository != ""
 }
 
 resource "aws_s3_bucket" "artifacts" {
@@ -33,4 +34,44 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
       sse_algorithm = "AES256"
     }
   }
+}
+
+resource "aws_ecr_repository" "service" {
+  for_each = var.container_repositories
+
+  name                 = "${local.name_prefix}-${each.value}"
+  image_tag_mutability = "MUTABLE"
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_ecr_lifecycle_policy" "service" {
+  for_each = aws_ecr_repository.service
+
+  repository = each.value.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep the last 10 images."
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = 10
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
 }

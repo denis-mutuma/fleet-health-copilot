@@ -23,6 +23,11 @@ flowchart LR
 - `services/mcp-*` contains early helper packages for future MCP tool integration.
 - `packages/contracts` contains JSON schemas for API contract alignment.
 
+More detail:
+
+- [Architecture](docs/architecture.md)
+- [Demo runbook](docs/demo-runbook.md)
+
 ## Local Setup
 
 Install web dependencies:

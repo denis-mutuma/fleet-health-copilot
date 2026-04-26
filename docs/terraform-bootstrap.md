@@ -38,3 +38,5 @@ Then continue with [`docs/aws-deployment-plan.md`](aws-deployment-plan.md).
 ## Automation
 
 The [`deploy-dev`](../.github/workflows/deploy-dev.yml) workflow always runs `terraform fmt` / `init -backend=false` / `validate`. When repository secret **`AWS_ROLE_ARN`** is set (GitHub OIDC role for this repo), the same dispatch also runs **`terraform plan`** against AWS for `env/dev.tfvars` (still **local state in CI** unless you add a backend config step). Set the secret empty or unset to skip the AWS plan job.
+
+From the repository root, **`bash scripts/validate_terraform.sh`** runs the same fmt/init/validate loop for both the root module and `bootstrap-state` (requires Terraform on `PATH`).

@@ -119,6 +119,21 @@ The job: OIDC → S3 backend `backend.ci.hcl` → `terraform init` → `terrafor
 
 If repository variable **`ENABLE_ECS`** is **`true`** but the GitHub Environment is missing **`VPC_ID`** or **`PUBLIC_SUBNET_IDS_JSON`**, Terraform validation fails (`vpc_id must be provided when enable_ecs is true`, or `At least two public_subnet_ids...`). Either add both secrets (subnet value must be a JSON array string, e.g. `["subnet-aaa","subnet-bbb"]`) or set **`ENABLE_ECS`** to **`false`** until networking is ready. The workflow now fails fast with an explicit error when this happens.
 
+**Common failure: `EntityAlreadyExists` / `BucketAlreadyExists` / `RepositoryAlreadyExistsException` / `ResourceExistsException`**
+
+Terraform is applying with a **state file that does not yet contain** resources that **already exist** in the account (for example you applied earlier with **local state** or a **different state key**, then pointed CI at remote state, or you recreated the backend with an empty key). Terraform then tries to **create** again and AWS returns **409 / AlreadyExists**.
+
+Fix: from a machine that uses the **same S3 backend + state key** as the failing GitHub Environment, run **`terraform init`**, then import the existing objects into state, then **`terraform plan`** / **`apply`** until clean:
+
+```bash
+cd infra/terraform
+# init with the same backend as deploy-aws for this environment (see §2)
+bash ../../scripts/import_terraform_existing_bootstrap.sh prod   # or dev | test
+terraform plan -var-file=env/prod.tfvars -var='github_repository=OWNER/REPO'
+```
+
+If **`plan`** still wants to **create** attach policies, lifecycle rules, or S3 bucket sub-resources that already exist in AWS, either let **`apply`** add what is missing or run **`terraform import`** for those addresses using the [Terraform AWS provider import IDs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs) for each resource type. Confirm **`TF_STATE_KEY`** (or backend key from `backend-config/*.hcl`) matches the environment so you do not attach **prod** imports to **dev** state.
+
 ## 6. Populate Secrets Manager (runtime)
 
 Terraform creates placeholders; values are **not** in state. Managed secrets use names like **`fleet-health-copilot-<environment>/<SECRET_NAME>`** (see [secrets.tf](../infra/terraform/secrets.tf): `${local.name_prefix}/${each.value}`).

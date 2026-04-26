@@ -69,6 +69,8 @@ Do **not** apply that plan. After `bash scripts/terraform_init_env.sh prod`, if 
 
 4. Run `terraform plan -var-file=env/prod.tfvars -var='github_repository=OWNER/REPO'`. You should see **creates** for prod-named resources, **no** destroys of existing dev resources.
 
+If step 4’s **`apply`** instead fails with **`EntityAlreadyExists`**, **`BucketAlreadyExists`**, or **`RepositoryAlreadyExistsException`**, the **prod** AWS objects are already there but this **state file is still empty** (for example resources were created earlier with **local** state or a **different key**). Do **not** delete the AWS resources; run **`bash scripts/import_terraform_existing_bootstrap.sh prod`** after **`terraform init`** for prod, then **`plan`** / **`apply`** again. Details: [github-actions-aws-deploy.md](github-actions-aws-deploy.md) (troubleshooting).
+
 5. **OIDC:** `manage_github_oidc_provider` should stay `false` in `env/prod.tfvars` if another environment’s state already created the account GitHub OIDC provider (typical). First greenfield account: create the provider from **one** stack (e.g. dev with `manage_github_oidc_provider = true`) before relying on prod CI.
 
 Then continue with [`docs/aws-deployment-plan.md`](aws-deployment-plan.md).

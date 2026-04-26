@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from fleet_health_orchestrator.agents import PlanResult, VerifierAgent
+from fleet_health_orchestrator.embeddings import create_query_embedder
+from fleet_health_orchestrator.models import RetrievalHit
 from fleet_health_orchestrator.rag import (
     LexicalRetrievalBackend,
     S3VectorsRetrievalBackend,
@@ -488,3 +491,57 @@ def test_evaluate_pipeline_reports_confusion_metrics(tmp_path, monkeypatch) -> N
     assert metrics["precision"] == 0.5
     assert metrics["recall"] == 0.5
     assert metrics["accuracy"] == 0.5
+    assert "retrieval_mean_reciprocal_rank" in metrics
+
+
+def test_retrieval_reciprocal_rank_helper() -> None:
+    evaluate_pipeline = _load_evaluate_pipeline()
+    assert evaluate_pipeline._retrieval_reciprocal_rank(
+        {"runbooks": ["noise", "rb_x"]}, "rb_x"
+    ) == pytest.approx(0.5)
+    assert evaluate_pipeline._retrieval_reciprocal_rank({"runbooks": ["rb_x"]}, "rb_x") == 1.0
+    assert evaluate_pipeline._retrieval_reciprocal_rank({}, "rb_x") == 0.0
+
+
+def test_verifier_rejects_citations_outside_retrieval() -> None:
+    verifier = VerifierAgent()
+    hits = [
+        RetrievalHit(
+            document_id="rb_good",
+            source="runbook",
+            title="Good",
+            score=1.0,
+            excerpt="text"
+        )
+    ]
+    plan = PlanResult(actions=["Follow rb_wrong: inspect everything."])
+    result = verifier.verify(plan=plan, hits=hits)
+    assert result.passed is False
+    assert any("rb_wrong" in warning for warning in result.warnings)
+
+
+def test_hash_embedding_produces_expected_dimension() -> None:
+    embed = create_query_embedder(24, provider="hash")
+    assert len(embed("battery thermal drift")) == 24
+
+
+def test_openai_embedding_provider_calls_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fleet_health_orchestrator import embeddings as embeddings_mod
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"data": [{"embedding": [0.25, 0.75]}]}
+
+    monkeypatch.setattr(embeddings_mod.httpx, "post", lambda *a, **k: FakeResponse())
+    embed = embeddings_mod.create_query_embedder(
+        2,
+        provider="openai",
+        openai_api_key="sk-test",
+        openai_model="text-embedding-3-small"
+    )
+    assert embed("hello") == [0.25, 0.75]

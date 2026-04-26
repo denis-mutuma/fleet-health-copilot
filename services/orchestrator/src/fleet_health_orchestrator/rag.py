@@ -1,12 +1,13 @@
-import hashlib
 import json
 from collections import Counter
+from collections.abc import Callable
 from re import findall
 from typing import Any, Protocol
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+from fleet_health_orchestrator.embeddings import create_query_embedder, hash_embedding
 from fleet_health_orchestrator.models import RetrievalHit
 
 
@@ -66,6 +67,7 @@ class S3VectorsRetrievalBackend:
         index_arn: str | None = None,
         embedding_dimension: int = 384,
         fixed_query_vector: list[float] | None = None,
+        embed_query: Callable[[str], list[float]] | None = None,
         client: Any | None = None
     ) -> None:
         self.bucket_name = bucket_name
@@ -73,6 +75,7 @@ class S3VectorsRetrievalBackend:
         self.index_arn = (index_arn or "").strip() or None
         self.embedding_dimension = embedding_dimension
         self._fixed_query_vector = fixed_query_vector
+        self._embed_query = embed_query
         self._client = client
 
     def search(
@@ -85,11 +88,12 @@ class S3VectorsRetrievalBackend:
             return []
 
         lookup = _document_lookup(documents)
-        vector = _resolve_query_vector(
-            query=query,
-            dimension=self.embedding_dimension,
-            fixed=self._fixed_query_vector
-        )
+        if self._fixed_query_vector is not None:
+            vector = self._fixed_query_vector
+        elif self._embed_query is not None:
+            vector = self._embed_query(query)
+        else:
+            vector = hash_embedding(query, self.embedding_dimension)
 
         params: dict[str, Any] = {
             "topK": limit,
@@ -157,7 +161,8 @@ def build_retrieval_backend(
     s3_vectors_index: str | None = None,
     s3_vectors_index_arn: str | None = None,
     s3_vectors_embedding_dimension: int | None = None,
-    s3_vectors_query_vector_json: str | None = None
+    s3_vectors_query_vector_json: str | None = None,
+    embedding_provider: str | None = None
 ) -> RetrievalBackend:
     normalized_name = (backend_name or "lexical").strip().lower()
 
@@ -182,12 +187,19 @@ def build_retrieval_backend(
             expected_dim=dimension
         )
 
+        embed_query = (
+            None
+            if fixed_vec is not None
+            else create_query_embedder(dimension, provider=embedding_provider)
+        )
+
         return S3VectorsRetrievalBackend(
             bucket_name=bucket,
             index_name=index,
             index_arn=arn or None,
             embedding_dimension=dimension,
-            fixed_query_vector=fixed_vec
+            fixed_query_vector=fixed_vec,
+            embed_query=embed_query
         )
 
     raise ValueError(
@@ -209,30 +221,6 @@ def _document_lookup(documents: list[dict[str, object]]) -> dict[str, dict[str, 
     return out
 
 
-def _deterministic_query_vector(query: str, dimension: int) -> list[float]:
-    """Stable pseudo-embedding for demos when no real embedding model is wired.
-
-    Vectors in the S3 index must be produced with the same model and dimension as
-    production queries; this helper only satisfies the API shape for integration
-    tests and experiments. Prefer real embeddings for meaningful ANN results.
-    """
-    if dimension <= 0:
-        raise ValueError("embedding dimension must be positive")
-
-    digest = hashlib.sha256(query.encode("utf-8")).digest()
-    values: list[float] = []
-    block = digest
-    while len(values) < dimension:
-        for i in range(0, len(block), 4):
-            if len(values) >= dimension:
-                break
-            chunk = block[i : i + 4].ljust(4, b"\x00")
-            u = int.from_bytes(chunk, "big", signed=False) / float(2**32)
-            values.append(u * 2.0 - 1.0)
-        block = hashlib.sha256(block).digest()
-    return values[:dimension]
-
-
 def _parse_fixed_query_vector_json(
     raw: str | None,
     *,
@@ -250,17 +238,6 @@ def _parse_fixed_query_vector_json(
             f"FLEET_S3_VECTORS_EMBEDDING_DIM ({expected_dim})."
         )
     return vector
-
-
-def _resolve_query_vector(
-    query: str,
-    *,
-    dimension: int,
-    fixed: list[float] | None
-) -> list[float]:
-    if fixed is not None:
-        return fixed
-    return _deterministic_query_vector(query, dimension)
 
 
 def _distance_to_score(distance: object, distance_metric: str) -> float:

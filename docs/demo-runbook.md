@@ -68,24 +68,27 @@ Expected output shape:
 
 ```json
 {
-  "events_total": 4.0,
-  "expected_anomalies": 3.0,
-  "incidents_generated": 3.0,
-  "true_positives": 3.0,
+  "events_total": 8.0,
+  "expected_anomalies": 5.0,
+  "incidents_generated": 5.0,
+  "true_positives": 5.0,
   "false_positives": 0.0,
   "false_negatives": 0.0,
-  "true_negatives": 1.0,
+  "true_negatives": 3.0,
   "precision": 1.0,
   "recall": 1.0,
   "accuracy": 1.0,
+  "retrieval_expected": 4.0,
+  "retrieval_hits": 4.0,
   "retrieval_hit_rate": 1.0,
+  "retrieval_mean_reciprocal_rank": 1.0,
   "agent_task_success_rate": 1.0,
   "average_response_latency_ms": 12.3,
   "average_time_to_diagnosis_ms": 1.2
 }
 ```
 
-The exact values can change if seed events change, but the important presentation point is that the metric names map to real confusion-matrix, retrieval, agent-success, and latency checks.
+The exact values can change if seed events or runbooks change, but the important presentation point is that the metric names map to real confusion-matrix, retrieval (including mean reciprocal rank of the expected runbook), agent-success, and latency checks.
 
 ## MCP Tool Demo
 

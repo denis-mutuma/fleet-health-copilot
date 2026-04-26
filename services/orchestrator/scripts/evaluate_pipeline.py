@@ -9,11 +9,20 @@ import httpx
 def _expected_runbook(event: dict[str, object]) -> str | None:
     tags = set(event.get("tags", []))
     metric = str(event.get("metric", ""))
+    if "network" in tags or "latency" in tags or "comms" in tags or "network" in metric:
+        return "rb_network_latency_v1"
     if "battery" in tags or "thermal" in tags or "battery" in metric:
         return "rb_battery_thermal_v2"
     if "motor" in tags or "current" in tags or "motor" in metric:
         return "rb_motor_current_v1"
     return None
+
+
+def _retrieval_reciprocal_rank(evidence: dict[str, object], expected_id: str) -> float:
+    runbooks = evidence.get("runbooks", [])
+    if not isinstance(runbooks, list) or expected_id not in runbooks:
+        return 0.0
+    return 1.0 / float(runbooks.index(expected_id) + 1)
 
 
 def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
@@ -25,6 +34,7 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
     true_negatives = 0
     retrieval_expected = 0
     retrieval_hits = 0
+    retrieval_reciprocal_rank_sum = 0.0
     agent_successes = 0
     response_latency_ms_total = 0.0
     time_to_diagnosis_ms_total = 0.0
@@ -59,6 +69,10 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
                 runbooks = evidence.get("runbooks", []) if isinstance(evidence, dict) else []
                 if expected_runbook in runbooks:
                     retrieval_hits += 1
+                if isinstance(evidence, dict):
+                    retrieval_reciprocal_rank_sum += _retrieval_reciprocal_rank(
+                        evidence, expected_runbook
+                    )
 
             verification = incident.get("verification", {})
             if isinstance(verification, dict) and verification.get("passed") is True:
@@ -79,6 +93,9 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
     recall = true_positives / expected_anomalies if expected_anomalies else 0.0
     accuracy = (true_positives + true_negatives) / total if total else 0.0
     retrieval_hit_rate = retrieval_hits / retrieval_expected if retrieval_expected else 0.0
+    retrieval_mean_reciprocal_rank = (
+        retrieval_reciprocal_rank_sum / retrieval_expected if retrieval_expected else 0.0
+    )
     agent_task_success_rate = agent_successes / predicted_anomalies if predicted_anomalies else 0.0
     average_response_latency_ms = response_latency_ms_total / total if total else 0.0
     average_time_to_diagnosis_ms = (
@@ -98,6 +115,7 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
         "retrieval_expected": float(retrieval_expected),
         "retrieval_hits": float(retrieval_hits),
         "retrieval_hit_rate": retrieval_hit_rate,
+        "retrieval_mean_reciprocal_rank": retrieval_mean_reciprocal_rank,
         "agent_task_success_rate": agent_task_success_rate,
         "average_response_latency_ms": average_response_latency_ms,
         "average_time_to_diagnosis_ms": average_time_to_diagnosis_ms

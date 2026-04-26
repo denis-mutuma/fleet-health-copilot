@@ -2,3 +2,7 @@
 {"event_id":"evt_2026_002","fleet_id":"fleet-alpha","device_id":"robot-07","timestamp":"2026-04-24T08:01:00Z","metric":"motor_current_a","value":39.0,"threshold":35.0,"severity":"medium","tags":["motor","current"]}
 {"event_id":"evt_2026_003","fleet_id":"fleet-alpha","device_id":"robot-03","timestamp":"2026-04-24T08:02:00Z","metric":"battery_temp_c","value":75.1,"threshold":65.0,"severity":"high","tags":["battery","thermal"]}
 {"event_id":"evt_2026_004","fleet_id":"fleet-alpha","device_id":"robot-11","timestamp":"2026-04-24T08:03:00Z","metric":"motor_current_a","value":28.0,"threshold":35.0,"severity":"low","tags":["motor","current"]}
+{"event_id":"evt_2026_005","fleet_id":"fleet-alpha","device_id":"robot-09","timestamp":"2026-04-24T08:04:00Z","metric":"network_latency_ms","value":240.0,"threshold":180.0,"severity":"high","tags":["network","latency","comms"]}
+{"event_id":"evt_2026_006","fleet_id":"fleet-alpha","device_id":"robot-09","timestamp":"2026-04-24T08:05:00Z","metric":"network_latency_ms","value":120.0,"threshold":180.0,"severity":"low","tags":["network","latency"]}
+{"event_id":"evt_2026_007","fleet_id":"fleet-alpha","device_id":"robot-12","timestamp":"2026-04-24T08:06:00Z","metric":"vibration_rms","value":8.4,"threshold":6.0,"severity":"medium","tags":["vibration","mechanical"]}
+{"event_id":"evt_2026_008","fleet_id":"fleet-alpha","device_id":"robot-12","timestamp":"2026-04-24T08:07:00Z","metric":"vibration_rms","value":4.1,"threshold":6.0,"severity":"low","tags":["vibration","mechanical"]}

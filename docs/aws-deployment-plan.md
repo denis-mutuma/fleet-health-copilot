@@ -90,17 +90,16 @@ aws secretsmanager put-secret-value \
 
 ## Remote State Plan
 
-Before applying real infrastructure, create a separate Terraform state bootstrap outside this root module:
+Use the bootstrap module and wiring steps in **[terraform-bootstrap.md](terraform-bootstrap.md)** (`infra/terraform/bootstrap-state`) to create:
 
-- S3 bucket for state files.
-- DynamoDB table for state locks.
-- Bucket versioning and encryption.
+- S3 bucket for state files (versioned, encrypted, private)
+- DynamoDB table for state locks
 - Separate state key per environment, for example:
   - `fleet-health-copilot/dev/terraform.tfstate`
   - `fleet-health-copilot/test/terraform.tfstate`
   - `fleet-health-copilot/prod/terraform.tfstate`
 
-Do not store AWS credentials in the repository.
+Do not store AWS credentials in the repository. The **[deploy-dev](../.github/workflows/deploy-dev.yml)** workflow validates Terraform formatting for both the root module and the bootstrap module; extend it with `plan` / `apply` after credentials and backend blocks are configured.
 
 ## GitHub Actions Credentials
 

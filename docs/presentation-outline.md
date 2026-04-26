@@ -46,13 +46,14 @@ Talk track:
 
 ## Slide 5: Agent Workflow
 
-Monitor -> Retriever -> Reporter
+Monitor -> Retriever -> Diagnosis -> Planner -> Verifier -> Reporter
 
 Talk track:
 
 - Monitor agent gates the workflow by anomaly threshold.
 - Retriever agent searches runbooks and incident history.
-- Reporter agent composes structured output with evidence.
+- Diagnosis and Planner agents turn evidence into hypotheses and actions.
+- Verifier agent checks grounding before the Reporter composes the structured output.
 - Deterministic agents make the MVP repeatable and explainable.
 
 ## Slide 6: Retrieval and Evidence

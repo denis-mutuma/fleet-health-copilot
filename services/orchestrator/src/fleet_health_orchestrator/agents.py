@@ -3,8 +3,18 @@ from datetime import UTC, datetime
 from time import perf_counter
 from uuid import uuid4
 
+from fleet_health_orchestrator.llm import refine_incident_summary
 from fleet_health_orchestrator.models import IncidentReport, RetrievalHit, TelemetryEvent
 from fleet_health_orchestrator.rag import LexicalRetrievalBackend, RetrievalBackend
+
+
+def _cited_runbook_id_from_action(action: str) -> str | None:
+    if not action.startswith("Follow "):
+        return None
+    rest = action[len("Follow "):]
+    if ":" not in rest:
+        return None
+    return rest.split(":", 1)[0].strip() or None
 
 
 @dataclass
@@ -86,19 +96,34 @@ class PlannerAgent:
 class VerifierAgent:
     def verify(self, plan: PlanResult, hits: list[RetrievalHit]) -> VerificationResult:
         has_runbook = any(hit.source == "runbook" for hit in hits)
+        runbook_ids = {hit.document_id for hit in hits if hit.source == "runbook"}
         checks = [
             "anomaly confirmed by MonitorAgent",
             "recommendations limited to operator review or maintenance actions"
         ]
         warnings: list[str] = []
+        bad_citation = False
 
         if has_runbook:
             checks.append("runbook evidence attached")
+            for action in plan.actions:
+                cited = _cited_runbook_id_from_action(action)
+                if cited is not None and cited not in runbook_ids:
+                    bad_citation = True
+                    warnings.append(
+                        f"recommended action cites {cited} which was not in retrieved runbook evidence"
+                    )
+            if runbook_ids and plan.actions and not any(
+                _cited_runbook_id_from_action(action) is not None for action in plan.actions
+            ):
+                warnings.append(
+                    "retrieved runbooks present but no Follow <runbook_id>: line anchored recommendations"
+                )
         else:
             warnings.append("no runbook evidence matched; using conservative fallback actions")
 
         return VerificationResult(
-            passed=bool(plan.actions),
+            passed=bool(plan.actions) and not bad_citation,
             checks=checks,
             warnings=warnings
         )
@@ -117,11 +142,13 @@ class ReporterAgent:
     ) -> IncidentReport:
         runbooks = [hit.document_id for hit in hits if hit.source == "runbook"]
         matched_incidents = [hit.document_id for hit in hits if hit.source == "incident"]
+        summary = f"{event.metric} exceeded threshold on {event.device_id}."
+        summary = refine_incident_summary(event, summary) or summary
         return IncidentReport(
             incident_id=f"inc_{uuid4().hex[:10]}",
             device_id=event.device_id,
             status="open",
-            summary=f"{event.metric} exceeded threshold on {event.device_id}.",
+            summary=summary,
             root_cause_hypotheses=diagnosis.hypotheses,
             recommended_actions=plan.actions,
             evidence={

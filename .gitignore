@@ -12,6 +12,7 @@ __pycache__/
 
 # Terraform generated files
 infra/terraform/.terraform/
+infra/terraform/bootstrap-state/.terraform/
 *.tfstate
 *.tfstate.*
 

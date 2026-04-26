@@ -65,7 +65,16 @@ Optional orchestrator retrieval settings:
 - `FLEET_S3_VECTORS_EMBEDDING_DIM` defaults to `384` and must match the vector index dimension.
 - `FLEET_S3_VECTORS_QUERY_VECTOR_JSON` is optional: a JSON array of floats used as the query vector for every search (same length as the embedding dim). Use it for integration checks against a known index; otherwise the service derives a deterministic pseudo-vector from the query string for API shape only—**production** queries should use the same embedding model as ingestion.
 
-IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or filters are returned (the backend sets `returnMetadata=true`).
+IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or filters are returned (the backend sets `returnMetadata=true`). For indexing scripts, also grant `s3vectors:PutVectors`.
+
+**Query embeddings** (`FLEET_EMBEDDING_PROVIDER`, default `hash`): `hash` (deterministic, no extra deps), `openai` (`FLEET_OPENAI_API_KEY`, `FLEET_OPENAI_EMBEDDING_MODEL`), `http` (`FLEET_EMBEDDING_HTTP_URL` returning JSON `{"embedding":[...]}`), or `sentence_transformers` (install `pip install -e "services/orchestrator[embeddings]"` and set `FLEET_SENTENCE_TRANSFORMER_MODEL`). The embedding dimension must match the S3 Vectors index.
+
+**Index vectors from SQLite** (after runbooks are in the DB):
+
+```bash
+.venv/bin/python services/orchestrator/scripts/index_s3_vectors.py --bucket YOUR_BUCKET --index YOUR_INDEX
+# or: --index-arn arn:aws:s3vectors:...
+```
 
 ## Run Locally
 

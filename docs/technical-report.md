@@ -99,6 +99,7 @@ The evaluation helper replays sample telemetry events through `/v1/orchestrate/e
 - recall,
 - accuracy,
 - retrieval hit rate,
+- mean reciprocal rank of the expected runbook in the evidence list,
 - agent task success rate,
 - response latency,
 - time-to-diagnosis.

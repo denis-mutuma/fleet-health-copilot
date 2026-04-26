@@ -41,7 +41,8 @@ retrieval_backend = build_retrieval_backend(
     s3_vectors_index=os.getenv("FLEET_S3_VECTORS_INDEX"),
     s3_vectors_index_arn=os.getenv("FLEET_S3_VECTORS_INDEX_ARN"),
     s3_vectors_embedding_dimension=_embedding_dim,
-    s3_vectors_query_vector_json=os.getenv("FLEET_S3_VECTORS_QUERY_VECTOR_JSON")
+    s3_vectors_query_vector_json=os.getenv("FLEET_S3_VECTORS_QUERY_VECTOR_JSON"),
+    embedding_provider=os.getenv("FLEET_EMBEDDING_PROVIDER")
 )
 orchestrator = AgentOrchestrator(
     monitor=MonitorAgent(),

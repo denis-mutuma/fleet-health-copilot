@@ -2,7 +2,7 @@
 
 ## One OIDC provider per AWS account
 
-The GitHub OIDC provider (`token.actions.githubusercontent.com`) is **account-wide**. Variable **`manage_github_oidc_provider`** (see [`variables.tf`](../infra/terraform/variables.tf)) controls whether this workspace **creates** that provider or **reads** it with a data source. **At most one** workspace per account should use **`true`** (typical pattern: temporarily **`true`** in **`env/dev.tfvars`** on a greenfield account for the first apply, then **`false`** everywhere; this repo defaults **`dev`** / **`test`** / **`prod`** to **`false`** so existing accounts reuse the provider). If you previously applied with **`manage_github_oidc_provider = true`** and then set **`false`**, remove the provider from that workspace’s state (it stays in AWS):
+The GitHub OIDC provider (`token.actions.githubusercontent.com`) is **account-wide**. Variable **`manage_github_oidc_provider`** (see [`variables.tf`](../infra/terraform/variables.tf)) controls whether this workspace **creates** that provider or **reuses** it by using the standard IAM OIDC provider ARN (no `iam:GetOpenIDConnectProvider`, so the GitHub Actions role does not need that permission). **At most one** workspace per account should use **`true`** (typical pattern: temporarily **`true`** in **`env/dev.tfvars`** on a greenfield account for the first apply, then **`false`** everywhere; this repo defaults **`dev`** / **`test`** / **`prod`** to **`false`** so existing accounts reuse the provider). If you previously applied with **`manage_github_oidc_provider = true`** and then set **`false`**, remove the provider from that workspace’s state (it stays in AWS):
 
 ```bash
 cd infra/terraform

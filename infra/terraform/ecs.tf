@@ -46,9 +46,14 @@ locals {
     }
   }
 
-  ecs_service_map    = var.enable_ecs ? local.ecs_services : {}
-  ecs_secret_arns    = distinct(concat(values(local.managed_web_secret_arns), values(var.web_secret_arns), values(var.orchestrator_secret_arns)))
-  ecs_secret_enabled = var.enable_ecs && length(local.ecs_secret_arns) > 0
+  ecs_service_map = var.enable_ecs ? local.ecs_services : {}
+  ecs_secret_arns = distinct(concat(values(local.managed_web_secret_arns), values(var.web_secret_arns), values(var.orchestrator_secret_arns)))
+  # Must not depend on secret ARNs (unknown until apply) or count on ecs_task_secret_access breaks at plan.
+  ecs_secret_enabled = var.enable_ecs && (
+    (var.enable_managed_secrets && length(setintersection(var.managed_secret_names, local.managed_web_secret_names)) > 0) ||
+    length(var.web_secret_arns) > 0 ||
+    length(var.orchestrator_secret_arns) > 0
+  )
 }
 
 data "aws_iam_policy_document" "ecs_tasks_assume_role" {

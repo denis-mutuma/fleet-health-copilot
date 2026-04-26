@@ -1,14 +1,10 @@
-data "aws_iam_openid_connect_provider" "github_actions_existing" {
-  count = local.github_oidc_enabled && !var.manage_github_oidc_provider ? 1 : 0
-
-  arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
-}
-
 locals {
+  # When we do not create the provider in this workspace, use the well-known ARN shape for GitHub's
+  # OIDC URL (no iam:GetOpenIDConnectProvider — the deploy role often lacks that read permission).
   github_oidc_provider_arn = !local.github_oidc_enabled ? "" : (
     var.manage_github_oidc_provider
     ? aws_iam_openid_connect_provider.github_actions[0].arn
-    : data.aws_iam_openid_connect_provider.github_actions_existing[0].arn
+    : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
   )
 }
 

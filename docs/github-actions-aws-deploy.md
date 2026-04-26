@@ -115,6 +115,10 @@ The job: OIDC → S3 backend `backend.ci.hcl` → `terraform init` → `terrafor
 
 - [ ] If the job fails, read the log (missing secret, IAM `AccessDenied`, Terraform validation).
 
+**Common failure: Terraform apply exit 1 with `ENABLE_ECS`**
+
+If repository variable **`ENABLE_ECS`** is **`true`** but the GitHub Environment is missing **`VPC_ID`** or **`PUBLIC_SUBNET_IDS_JSON`**, Terraform validation fails (`vpc_id must be provided when enable_ecs is true`, or `At least two public_subnet_ids...`). Either add both secrets (subnet value must be a JSON array string, e.g. `["subnet-aaa","subnet-bbb"]`) or set **`ENABLE_ECS`** to **`false`** until networking is ready. The workflow now fails fast with an explicit error when this happens.
+
 ## 6. Populate Secrets Manager (runtime)
 
 Terraform creates placeholders; values are **not** in state. Managed secrets use names like **`fleet-health-copilot-<environment>/<SECRET_NAME>`** (see [secrets.tf](../infra/terraform/secrets.tf): `${local.name_prefix}/${each.value}`).

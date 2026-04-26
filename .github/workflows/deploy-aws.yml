@@ -156,6 +156,12 @@ jobs:
           TF_VAR_web_next_public_clerk_publishable_key: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
+          if [ "${ENABLE_ECS}" = "true" ]; then
+            if [ -z "${VPC_ID:-}" ] || [ -z "${SUBNETS_JSON:-}" ]; then
+              echo "::error::Repository variable ENABLE_ECS is true but GitHub Environment ${{ needs.select.outputs.gh_environment }} is missing VPC_ID or PUBLIC_SUBNET_IDS_JSON. Add both secrets (PUBLIC_SUBNET_IDS_JSON must be a JSON array of at least two subnet IDs), or set ENABLE_ECS to false until ready."
+              exit 1
+            fi
+          fi
           # Use TF_VAR_* for VPC/subnets so JSON lists are not broken by shell double-quotes
           # (e.g. public_subnet_ids=["a","b"] inside -var="..." truncates at the first inner ").
           if [ -n "${VPC_ID:-}" ]; then export TF_VAR_vpc_id="${VPC_ID}"; fi
@@ -219,6 +225,12 @@ jobs:
           TF_VAR_web_next_public_clerk_publishable_key: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
+          if [ "${ENABLE_ECS}" = "true" ]; then
+            if [ -z "${VPC_ID:-}" ] || [ -z "${SUBNETS_JSON:-}" ]; then
+              echo "::error::Repository variable ENABLE_ECS is true but GitHub Environment ${{ needs.select.outputs.gh_environment }} is missing VPC_ID or PUBLIC_SUBNET_IDS_JSON. Add both secrets, or set ENABLE_ECS to false until ready."
+              exit 1
+            fi
+          fi
           if [ -n "${VPC_ID:-}" ]; then export TF_VAR_vpc_id="${VPC_ID}"; fi
           if [ -n "${SUBNETS_JSON:-}" ]; then export TF_VAR_public_subnet_ids="${SUBNETS_JSON}"; fi
           if [ -n "${ORCH_URL:-}" ]; then export TF_VAR_web_next_public_orchestrator_api_base_url="${ORCH_URL}"; fi

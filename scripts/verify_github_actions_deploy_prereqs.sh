@@ -36,3 +36,8 @@ bash scripts/validate_terraform.sh
 
 echo ""
 echo "Next: docs/github-actions-aws-deploy.md"
+echo ""
+echo "After a successful terraform apply for an environment:"
+echo "  bash scripts/print_github_environment_hints.sh dev"
+echo "  CLERK_SECRET_KEY=... bash scripts/put_managed_clerk_secret.sh dev"
+echo "Then push or run deploy-aws on the matching branch."

@@ -27,6 +27,19 @@ Local sanity check (optional):
 bash scripts/verify_github_actions_deploy_prereqs.sh
 ```
 
+After you **apply** Terraform for an environment (local or CI), copy values into GitHub:
+
+```bash
+bash scripts/print_github_environment_hints.sh dev   # or test | prod
+```
+
+Put the **Clerk secret key** into the managed placeholder (not the publishable key):
+
+```bash
+export CLERK_SECRET_KEY='sk_...'
+bash scripts/put_managed_clerk_secret.sh dev   # or test | prod
+```
+
 ## 1. Bootstrap remote state (once)
 
 - [ ] `cd infra/terraform/bootstrap-state`
@@ -122,6 +135,7 @@ Replace `dev` with `test` or `prod` to match the environment you deployed.
 - [ ] Confirm ECR repositories exist and at least one **`deploy-aws`** run succeeded (typically with `ENABLE_ECS` unset or not `true` yet).
 - [ ] Set repository variable **`ENABLE_ECS`** to **`true`**.
 - [ ] Add **`VPC_ID`** and **`PUBLIC_SUBNET_IDS_JSON`** to the matching **GitHub Environment** secrets.
+- [ ] Local planning reference: merge [`infra/terraform/env/ecs.example.tfvars`](../infra/terraform/env/ecs.example.tfvars) with `env/<env>.tfvars` (see comments in that file for **`FLEET_CORS_ORIGINS`**).
 - [ ] Set **`WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL`** when you have the public orchestrator URL; if the browser calls the orchestrator directly, configure orchestrator **`FLEET_CORS_ORIGINS`** in Terraform/task definition per [README](../README.md).
 - [ ] Push again or **Run workflow** so Terraform updates ECS services and image tags.
 
@@ -134,6 +148,7 @@ terraform output orchestrator_service_discovery_name
 
 ## 8. Optional: S3 Vectors RAG
 
+- [ ] Merge [`infra/terraform/env/s3vectors.example.tfvars`](../infra/terraform/env/s3vectors.example.tfvars) with `env/<env>.tfvars` (`terraform ... -var-file=env/dev.tfvars -var-file=env/s3vectors.example.tfvars`).
 - [ ] If `enable_s3_vectors_rag` is enabled in tfvars, follow [s3-vectors-operations.md](s3-vectors-operations.md) and `terraform output s3_vectors_orchestrator_env_hint`. Indexing remains an operator step (`index_s3_vectors.py`).
 
 ## 9. Verify

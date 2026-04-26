@@ -20,6 +20,8 @@ Not implemented yet:
 - **Managed Postgres** wired into the app (orchestrator remains SQLite / EFS by default).
 - **Embedding inference** and automatic corpus upsert in AWS (you still run [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) with matching `FLEET_EMBEDDING_PROVIDER`).
 
+See [backlog-postgres-and-indexing.md](backlog-postgres-and-indexing.md) for a concise design sketch.
+
 ## GitHub Actions: `deploy-aws` (mandatory S3 state + OIDC)
 
 See **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)** for the full job graph and comments.

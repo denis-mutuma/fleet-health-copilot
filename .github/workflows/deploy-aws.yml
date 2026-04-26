@@ -160,7 +160,8 @@ jobs:
             -var-file="env/${TF_ENV}.tfvars"
             -var="github_repository=${GITHUB_REPO}"
             -var="enable_ecs=${ENABLE_ECS}"
-            -var='container_image_tags={web=latest,orchestrator=latest}'
+            # Bare identifiers (e.g. latest) in -var HCL are variable refs; use quoted strings.
+            -var='container_image_tags={web="latest",orchestrator="latest"}'
           )
           if [ -n "${VPC_ID:-}" ]; then EXTRA+=( -var="vpc_id=${VPC_ID}" ); fi
           if [ -n "${SUBNETS_JSON:-}" ]; then EXTRA+=( -var="public_subnet_ids=${SUBNETS_JSON}" ); fi

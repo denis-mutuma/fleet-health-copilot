@@ -101,6 +101,7 @@ The evaluation helper replays sample telemetry events through `/v1/orchestrate/e
 - retrieval hit rate,
 - mean reciprocal rank of the expected runbook in the evidence list,
 - verifier pass rate on generated incidents,
+- runbook action grounding rate (actions that cite retrieved runbook IDs when runbooks are present),
 - agent task success rate,
 - response latency,
 - time-to-diagnosis.
@@ -148,7 +149,7 @@ Known remaining gaps:
 
 Recommended next implementation steps:
 
-1. Wire a production embedding model for S3 Vectors queries so ANN results align with ingested vectors, and optionally add a vector upsert path from RAG documents.
+1. Configure **`FLEET_EMBEDDING_PROVIDER`** and dimension consistently for S3 Vectors **query** and **`index_s3_vectors.py`** ingestion so ANN matches production vectors (see [s3-vectors-operations.md](s3-vectors-operations.md)).
 2. Deepen diagnosis or verifier grounding against retrieved evidence, or introduce optional LLM-backed variants.
 3. Add a deployed environment using Terraform and GitHub Actions.
 4. Expand the evaluation dataset beyond the current small seed set.

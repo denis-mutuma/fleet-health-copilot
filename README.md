@@ -150,9 +150,10 @@ PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/t
 PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry/tests
 PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
 PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests
+bash scripts/validate_terraform.sh
 ```
 
-The pull request test workflow runs the same web, orchestrator, and MCP checks.
+The pull request test workflow runs the same web, orchestrator, and MCP checks. Run **`bash scripts/validate_terraform.sh`** locally (requires Terraform installed) to mirror root and bootstrap module checks before changing infra.
 
 You can also run the full local stack with Docker:
 

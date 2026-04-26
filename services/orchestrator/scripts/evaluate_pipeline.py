@@ -18,6 +18,28 @@ def _expected_runbook(event: dict[str, object]) -> str | None:
     return None
 
 
+def _runbook_action_grounding(incident: dict[str, object]) -> bool | None:
+    """True if some recommended action cites a Follow <runbook_id> present in evidence.runbooks."""
+    evidence = incident.get("evidence", {})
+    if not isinstance(evidence, dict):
+        return None
+    runbooks = evidence.get("runbooks", [])
+    if not isinstance(runbooks, list) or not runbooks:
+        return None
+    actions = incident.get("recommended_actions", [])
+    if not isinstance(actions, list) or not actions:
+        return False
+    ids = {str(x) for x in runbooks}
+    for action in actions:
+        text = str(action)
+        if not text.startswith("Follow "):
+            continue
+        rest = text[len("Follow "):].split(":", 1)[0].strip()
+        if rest in ids:
+            return True
+    return False
+
+
 def _retrieval_reciprocal_rank(evidence: dict[str, object], expected_id: str) -> float:
     runbooks = evidence.get("runbooks", [])
     if not isinstance(runbooks, list) or expected_id not in runbooks:
@@ -37,6 +59,8 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
     retrieval_reciprocal_rank_sum = 0.0
     verifier_passes = 0
     verifier_total = 0
+    runbook_grounding_expected = 0
+    runbook_grounding_ok = 0
     agent_successes = 0
     response_latency_ms_total = 0.0
     time_to_diagnosis_ms_total = 0.0
@@ -83,6 +107,11 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
                 verifier_total += 1
                 if isinstance(verification, dict) and verification.get("passed") is True:
                     verifier_passes += 1
+                grounded = _runbook_action_grounding(incident)
+                if grounded is not None:
+                    runbook_grounding_expected += 1
+                    if grounded:
+                        runbook_grounding_ok += 1
             time_to_diagnosis_ms_total += float(incident.get("latency_ms", 0.0))
 
             if expected and generated_incident:
@@ -103,6 +132,9 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
         retrieval_reciprocal_rank_sum / retrieval_expected if retrieval_expected else 0.0
     )
     verifier_pass_rate = verifier_passes / verifier_total if verifier_total else 0.0
+    runbook_action_grounding_rate = (
+        runbook_grounding_ok / runbook_grounding_expected if runbook_grounding_expected else 0.0
+    )
     agent_task_success_rate = agent_successes / predicted_anomalies if predicted_anomalies else 0.0
     average_response_latency_ms = response_latency_ms_total / total if total else 0.0
     average_time_to_diagnosis_ms = (
@@ -124,6 +156,7 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
         "retrieval_hit_rate": retrieval_hit_rate,
         "retrieval_mean_reciprocal_rank": retrieval_mean_reciprocal_rank,
         "verifier_pass_rate": verifier_pass_rate,
+        "runbook_action_grounding_rate": runbook_action_grounding_rate,
         "agent_task_success_rate": agent_task_success_rate,
         "average_response_latency_ms": average_response_latency_ms,
         "average_time_to_diagnosis_ms": average_time_to_diagnosis_ms

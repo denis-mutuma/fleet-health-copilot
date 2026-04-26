@@ -493,6 +493,27 @@ def test_evaluate_pipeline_reports_confusion_metrics(tmp_path, monkeypatch) -> N
     assert metrics["accuracy"] == 0.5
     assert "retrieval_mean_reciprocal_rank" in metrics
     assert "verifier_pass_rate" in metrics
+    assert "runbook_action_grounding_rate" in metrics
+
+
+def test_runbook_action_grounding_helper() -> None:
+    evaluate_pipeline = _load_evaluate_pipeline()
+    assert evaluate_pipeline._runbook_action_grounding({}) is None
+    assert evaluate_pipeline._runbook_action_grounding(
+        {"evidence": {"runbooks": []}, "recommended_actions": ["x"]}
+    ) is None
+    assert evaluate_pipeline._runbook_action_grounding(
+        {
+            "evidence": {"runbooks": ["rb_a"]},
+            "recommended_actions": ["Follow rb_b: do thing"]
+        }
+    ) is False
+    assert evaluate_pipeline._runbook_action_grounding(
+        {
+            "evidence": {"runbooks": ["rb_a"]},
+            "recommended_actions": ["Follow rb_a: do thing"]
+        }
+    ) is True
 
 
 def test_retrieval_reciprocal_rank_helper() -> None:

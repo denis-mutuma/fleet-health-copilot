@@ -90,6 +90,7 @@ Expected output shape:
   "retrieval_hit_rate": 1.0,
   "retrieval_mean_reciprocal_rank": 1.0,
   "verifier_pass_rate": 1.0,
+  "runbook_action_grounding_rate": 1.0,
   "agent_task_success_rate": 1.0,
   "average_response_latency_ms": 12.3,
   "average_time_to_diagnosis_ms": 1.2

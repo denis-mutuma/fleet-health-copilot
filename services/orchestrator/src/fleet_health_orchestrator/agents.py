@@ -66,6 +66,10 @@ class DiagnosisAgent:
         if any(hit.source == "incident" for hit in hits):
             hypotheses.append("repeat pattern from prior incident history")
 
+        for hit in hits[:3]:
+            if hit.title.strip():
+                hypotheses.append(f"retrieved context: {hit.title.strip()}")
+
         confidence_score = min(0.95, 0.55 + (0.1 * len(hits)))
         return DiagnosisResult(
             hypotheses=list(dict.fromkeys(hypotheses)),

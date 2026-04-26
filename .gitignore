@@ -13,6 +13,8 @@ __pycache__/
 # Terraform generated files
 infra/terraform/.terraform/
 infra/terraform/bootstrap-state/.terraform/
+infra/terraform/backend.tf
+infra/terraform/backend.hcl
 *.tfstate
 *.tfstate.*
 
@@ -22,6 +24,10 @@ infra/terraform/bootstrap-state/.terraform/
 # OS/Editor
 .DS_Store
 .vscode/
+
+# Local tooling
+.codex
+.codex/
 
 # Next.js build output
 apps/web/.next/

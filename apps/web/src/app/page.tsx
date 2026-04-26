@@ -32,7 +32,7 @@ export default async function HomePage() {
   );
 
   return (
-    <main className="container">
+    <main className="container" aria-label="Fleet incident operations dashboard">
       <header className="hero">
         <div className="header-row">
           <div className="brand-row">

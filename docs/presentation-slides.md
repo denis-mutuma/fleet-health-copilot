@@ -1,6 +1,8 @@
 # Fleet Health Copilot — presentation slides
 
-Export-friendly deck aligned with [presentation-outline.md](presentation-outline.md). Use one heading per slide when importing into Google Slides, PowerPoint, or Marp.
+Export-friendly deck aligned with [presentation-outline.md](presentation-outline.md). Use one heading per slide when importing into Google Slides or PowerPoint.
+
+**Marp:** [presentation-slides.marp.md](presentation-slides.marp.md) — run `npx @marp-team/marp-cli docs/presentation-slides.marp.md -o deck.pdf` (or `.pptx` with a converter) to export slides.
 
 ---
 

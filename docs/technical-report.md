@@ -100,6 +100,7 @@ The evaluation helper replays sample telemetry events through `/v1/orchestrate/e
 - accuracy,
 - retrieval hit rate,
 - mean reciprocal rank of the expected runbook in the evidence list,
+- verifier pass rate on generated incidents,
 - agent task success rate,
 - response latency,
 - time-to-diagnosis.
@@ -125,9 +126,9 @@ Completed hardening:
 
 Known remaining gaps:
 
-- S3 Vectors queries use a deterministic pseudo-embedding unless you set `FLEET_S3_VECTORS_QUERY_VECTOR_JSON` or extend the service with your embedding model, so ANN quality depends on matching production embeddings at index time.
-- Terraform is present but not yet connected to an end-to-end deployment.
-- The agents are deterministic and not yet LLM-generated.
+- S3 Vectors **ANN quality** still depends on using the same **`FLEET_EMBEDDING_PROVIDER`** (e.g. `openai`, `http`, `sentence_transformers`) and dimension for both [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) and live queries; the default `hash` provider is deterministic only. See [s3-vectors-operations.md](s3-vectors-operations.md).
+- Terraform root module is not yet **applied** end-to-end in a shared account (bootstrap + `backend.tf.example` + optional CI plan are prepared).
+- Agents remain **mostly deterministic**; optional OpenAI summary refinement exists behind env flags ([`llm.py`](../services/orchestrator/src/fleet_health_orchestrator/llm.py)), not full LLM planning.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
 
 ## Capstone Requirement Mapping

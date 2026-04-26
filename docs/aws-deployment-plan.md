@@ -99,7 +99,7 @@ Use the bootstrap module and wiring steps in **[terraform-bootstrap.md](terrafor
   - `fleet-health-copilot/test/terraform.tfstate`
   - `fleet-health-copilot/prod/terraform.tfstate`
 
-Do not store AWS credentials in the repository. The **[deploy-dev](../.github/workflows/deploy-dev.yml)** workflow validates Terraform formatting for both the root module and the bootstrap module; extend it with `plan` / `apply` after credentials and backend blocks are configured.
+Do not store AWS credentials in the repository. The **[deploy-dev](../.github/workflows/deploy-dev.yml)** workflow validates Terraform formatting for both the root module and the bootstrap module. When repository secret **`AWS_ROLE_ARN`** is set, the same manual dispatch also runs **`terraform plan`** for `env/dev.tfvars` (still local state in CI until you add a backend init step). Copy [`infra/terraform/backend.tf.example`](../infra/terraform/backend.tf.example) to gitignored `backend.tf` for remote state as described in [terraform-bootstrap.md](terraform-bootstrap.md).
 
 ## GitHub Actions Credentials
 

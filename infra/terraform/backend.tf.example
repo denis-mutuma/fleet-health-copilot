@@ -1,0 +1,14 @@
+# Copy to backend.tf (gitignored) after applying bootstrap-state, then:
+#   cd infra/terraform && terraform init -migrate-state
+#
+# Terraform merges this block with providers.tf in the same directory.
+
+terraform {
+  backend "s3" {
+    bucket         = "REPLACE_WITH_STATE_BUCKET"
+    key            = "fleet-health-copilot/dev/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "fleet-health-copilot-tf-locks"
+    encrypt        = true
+  }
+}

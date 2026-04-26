@@ -169,3 +169,13 @@ The web container builds the Next.js app and serves it with `next start`. Supply
 The current implementation is a concise capstone core: deterministic multi-agent orchestration, lexical RAG (default), optional AWS S3 Vectors RAG, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics, and AWS deployment scaffolding. Retrieval lives in `services/orchestrator/src/fleet_health_orchestrator/rag.py`.
 
 Next capstone-depth steps are optional LLM-backed report generation, wiring a real embedding model for S3 Vectors queries, and production deployment execution.
+
+## Git and history
+
+If you rewrite `main` (for example to strip automated commit trailers), publish with:
+
+```bash
+git push --force-with-lease origin main
+```
+
+Operational checklist for S3 Vectors in AWS: [docs/s3-vectors-operations.md](docs/s3-vectors-operations.md). Marp slide export: [docs/presentation-slides.marp.md](docs/presentation-slides.marp.md).

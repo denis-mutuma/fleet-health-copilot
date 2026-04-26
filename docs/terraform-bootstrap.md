@@ -24,22 +24,17 @@ terraform apply \
 
 ## Wire the root module
 
-In [`infra/terraform`](../infra/terraform), add a `backend "s3"` block to a new `backend.tf` (do not commit real bucket names if the file is public; use a private tfvars or environment-specific snippet):
+[`infra/terraform/backend.tf.example`](../infra/terraform/backend.tf.example) is the canonical template. **`backend.tf` is gitignored** so bucket names stay local:
 
-```hcl
-terraform {
-  backend "s3" {
-    bucket         = "YOUR_ACCOUNT-fleet-health-tf-state"
-    key            = "fleet-health-copilot/dev/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "fleet-health-copilot-tf-locks"
-    encrypt        = true
-  }
-}
+```bash
+cd infra/terraform
+cp backend.tf.example backend.tf
+# Edit backend.tf: set bucket, region, dynamodb_table, key per environment
+terraform init -migrate-state
 ```
 
-Then `terraform init -migrate-state` from `infra/terraform` and continue with [`docs/aws-deployment-plan.md`](aws-deployment-plan.md).
+Then continue with [`docs/aws-deployment-plan.md`](aws-deployment-plan.md).
 
 ## Automation
 
-The [`deploy-dev`](../.github/workflows/deploy-dev.yml) workflow runs `terraform fmt`, `init -backend=false`, and `validate` for both the root module and the bootstrap module. Add `plan` / `apply` jobs after you configure AWS credentials and backend settings appropriate for your account.
+The [`deploy-dev`](../.github/workflows/deploy-dev.yml) workflow always runs `terraform fmt` / `init -backend=false` / `validate`. When repository secret **`AWS_ROLE_ARN`** is set (GitHub OIDC role for this repo), the same dispatch also runs **`terraform plan`** against AWS for `env/dev.tfvars` (still **local state in CI** unless you add a backend config step). Set the secret empty or unset to skip the AWS plan job.

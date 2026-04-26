@@ -492,6 +492,7 @@ def test_evaluate_pipeline_reports_confusion_metrics(tmp_path, monkeypatch) -> N
     assert metrics["recall"] == 0.5
     assert metrics["accuracy"] == 0.5
     assert "retrieval_mean_reciprocal_rank" in metrics
+    assert "verifier_pass_rate" in metrics
 
 
 def test_retrieval_reciprocal_rank_helper() -> None:

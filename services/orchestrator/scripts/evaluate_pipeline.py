@@ -35,6 +35,8 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
     retrieval_expected = 0
     retrieval_hits = 0
     retrieval_reciprocal_rank_sum = 0.0
+    verifier_passes = 0
+    verifier_total = 0
     agent_successes = 0
     response_latency_ms_total = 0.0
     time_to_diagnosis_ms_total = 0.0
@@ -77,6 +79,10 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
             verification = incident.get("verification", {})
             if isinstance(verification, dict) and verification.get("passed") is True:
                 agent_successes += 1
+            if generated_incident:
+                verifier_total += 1
+                if isinstance(verification, dict) and verification.get("passed") is True:
+                    verifier_passes += 1
             time_to_diagnosis_ms_total += float(incident.get("latency_ms", 0.0))
 
             if expected and generated_incident:
@@ -96,6 +102,7 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
     retrieval_mean_reciprocal_rank = (
         retrieval_reciprocal_rank_sum / retrieval_expected if retrieval_expected else 0.0
     )
+    verifier_pass_rate = verifier_passes / verifier_total if verifier_total else 0.0
     agent_task_success_rate = agent_successes / predicted_anomalies if predicted_anomalies else 0.0
     average_response_latency_ms = response_latency_ms_total / total if total else 0.0
     average_time_to_diagnosis_ms = (
@@ -116,6 +123,7 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
         "retrieval_hits": float(retrieval_hits),
         "retrieval_hit_rate": retrieval_hit_rate,
         "retrieval_mean_reciprocal_rank": retrieval_mean_reciprocal_rank,
+        "verifier_pass_rate": verifier_pass_rate,
         "agent_task_success_rate": agent_task_success_rate,
         "average_response_latency_ms": average_response_latency_ms,
         "average_time_to_diagnosis_ms": average_time_to_diagnosis_ms

@@ -42,6 +42,13 @@ Start the web app in another terminal:
 npm run web:dev
 ```
 
+## Rehearsal checklist
+
+- Confirm orchestrator `/health` and web load after `npm run web:dev`.
+- Run `index_documents.py` so RAG retrieval is non-empty before simulation.
+- Walk one **battery**, one **motor**, and one **network** incident; open detail and read verification + evidence.
+- Run `evaluate_pipeline.py` once and skim `verifier_pass_rate` and retrieval metrics.
+
 Index sample runbooks and historical incidents:
 
 ```bash
@@ -82,6 +89,7 @@ Expected output shape:
   "retrieval_hits": 4.0,
   "retrieval_hit_rate": 1.0,
   "retrieval_mean_reciprocal_rank": 1.0,
+  "verifier_pass_rate": 1.0,
   "agent_task_success_rate": 1.0,
   "average_response_latency_ms": 12.3,
   "average_time_to_diagnosis_ms": 1.2

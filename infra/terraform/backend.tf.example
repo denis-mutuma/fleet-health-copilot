@@ -1,12 +1,19 @@
-# Copy to backend.tf (gitignored) after applying bootstrap-state, then:
-#   cd infra/terraform && terraform init -migrate-state
+# Copy to backend.tf (gitignored) after applying bootstrap-state.
+#
+# IMPORTANT: One remote state object per environment. The `key` below is only a default for the first
+# init; always re-init with the matching fragment so Terraform never mixes environments:
+#   bash ../../scripts/terraform_init_env.sh dev    # or test | prod
+# or:
+#   terraform init -reconfigure -backend-config=backend-config/dev.hcl
+# Use env/<same-env>.tfvars with that state. Using prod.tfvars while the backend key points at
+# dev state (or a prod state that still lists *-dev-* AWS names) produces destructive plans.
 #
 # Terraform merges this block with providers.tf in the same directory.
 
 terraform {
   backend "s3" {
     bucket         = "REPLACE_WITH_STATE_BUCKET"
-    # One state object per environment (match CI: fleet-health-copilot/<dev|test|prod>/terraform.tfstate).
+    # Overridden by backend-config/<env>.hcl when you follow scripts/terraform_init_env.sh
     key            = "fleet-health-copilot/dev/terraform.tfstate"
     region         = "us-east-1"
     dynamodb_table = "fleet-health-copilot-tf-locks"

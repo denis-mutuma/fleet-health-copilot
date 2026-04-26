@@ -45,7 +45,7 @@ bash scripts/verify_github_actions_deploy_prereqs.sh
 GitHub Actions needs `AWS_ROLE_ARN`, but Terraform creates that role when `github_repository` is set. Apply **once** from your laptop (or any principal with enough IAM/S3/etc. rights).
 
 - [ ] Point the root module at the same remote backend:
-  - Copy [infra/terraform/backend.tf.example](../infra/terraform/backend.tf.example) to `infra/terraform/backend.tf` and edit **bucket**, **region**, **dynamodb_table**, **key** (must match the environment: `fleet-health-copilot/<dev|test|prod>/terraform.tfstate`), **or**
+  - Copy [infra/terraform/backend.tf.example](../infra/terraform/backend.tf.example) to `infra/terraform/backend.tf` and edit **bucket**, **region**, **dynamodb_table**; then run [scripts/terraform_init_env.sh](../scripts/terraform_init_env.sh) with **`dev`**, **`test`**, or **`prod`** so the state **key** matches the tfvars you use (`backend-config/*.hcl`). **Do not** run `env/prod.tfvars` against a backend still initialized for `dev` (see [terraform-bootstrap.md](terraform-bootstrap.md) “One state file per environment”). **Or**
   - Run [scripts/terraform_remote_backend_init.sh](../scripts/terraform_remote_backend_init.sh) with `TF_STATE_BUCKET`, `TF_LOCK_TABLE`, `AWS_REGION`, and **`TF_ENV`** (defaults key to `fleet-health-copilot/${TF_ENV}/terraform.tfstate`) or explicit `TF_STATE_KEY`.
 - [ ] `cd infra/terraform && terraform init` (with backend configured).
 - [ ] `terraform apply` including:

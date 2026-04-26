@@ -29,9 +29,47 @@ terraform apply \
 ```bash
 cd infra/terraform
 cp backend.tf.example backend.tf
-# Edit backend.tf: set bucket, region, dynamodb_table, key per environment
-terraform init -migrate-state
+# Edit backend.tf: set bucket, region, dynamodb_table (keep default key as dev until you use fragments)
 ```
+
+### One state file per environment (required)
+
+Remote state keys must match GitHub Actions and your tfvars:
+
+| Environment | State key in S3 |
+|-------------|-----------------|
+| dev | `fleet-health-copilot/dev/terraform.tfstate` |
+| test | `fleet-health-copilot/test/terraform.tfstate` |
+| prod | `fleet-health-copilot/prod/terraform.tfstate` |
+
+After `backend.tf` exists, **always** select the environment before `plan` / `apply`:
+
+```bash
+# From repository root
+bash scripts/terraform_init_env.sh dev
+terraform -chdir=infra/terraform plan -var-file=env/dev.tfvars -var='github_repository=OWNER/REPO'
+```
+
+Committed fragments live under [`infra/terraform/backend-config/`](../infra/terraform/backend-config/). They only set `key`; `bucket` / `region` / `dynamodb_table` / `encrypt` still come from your local `backend.tf`.
+
+**Symptom of a mixed state:** `terraform plan -var-file=env/prod.tfvars` refreshes `fleet-health-copilot-dev-*` resources and plans mass destroy/replace. That means the backend `key` you initialized does **not** match prod, or the **prod** state object incorrectly holds dev stack entries (see recovery below).
+
+### Recover a contaminated `prod` state (tracks dev AWS names)
+
+Do **not** apply that plan. After `bash scripts/terraform_init_env.sh prod`, if `terraform state show 'aws_ecr_repository.service["web"]'` shows `fleet-health-copilot-dev-web`, prod state is wrong for prod tfvars.
+
+1. Confirm dev state is healthy: `bash scripts/terraform_init_env.sh dev` → `terraform state list` → should list your dev stack.
+2. Re-init prod: `bash scripts/terraform_init_env.sh prod`.
+3. Remove **all** resource addresses from prod state (this does **not** delete AWS; it only edits the prod state file):
+
+   ```bash
+   cd infra/terraform
+   terraform state list | while read -r addr; do terraform state rm "$addr"; done
+   ```
+
+4. Run `terraform plan -var-file=env/prod.tfvars -var='github_repository=OWNER/REPO'`. You should see **creates** for prod-named resources, **no** destroys of existing dev resources.
+
+5. **OIDC:** `manage_github_oidc_provider` should stay `false` in `env/prod.tfvars` if another environment’s state already created the account GitHub OIDC provider (typical). First greenfield account: create the provider from **one** stack (e.g. dev with `manage_github_oidc_provider = true`) before relying on prod CI.
 
 Then continue with [`docs/aws-deployment-plan.md`](aws-deployment-plan.md).
 

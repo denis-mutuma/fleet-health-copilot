@@ -1,3 +1,5 @@
+# Web production build runs Clerk during SSG; set repository secret NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.
+
 name: test
 
 on:
@@ -10,6 +12,8 @@ on:
 jobs:
   quality-gates:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +26,12 @@ jobs:
         run: npm ci --workspace apps/web
       - name: Lint web
         run: npm run web:lint
+      - name: Ensure Clerk publishable key for Next.js build
+        run: |
+          if [ -z "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}" ]; then
+            echo "::error::Missing secret NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY. Add it under Settings → Secrets and variables → Actions (repository secret). Use your Clerk test publishable key (pk_test_...)."
+            exit 1
+          fi
       - name: Build web
         run: npm run web:build
       - name: Install orchestrator dependencies

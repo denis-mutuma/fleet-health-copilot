@@ -160,6 +160,8 @@ bash scripts/verify_github_actions_deploy_prereqs.sh
 
 The pull request **`test.yml`** workflow runs the same web, orchestrator, MCP checks, and **`scripts/validate_terraform.sh`**. Run **`bash scripts/validate_terraform.sh`** locally (requires Terraform on `PATH`) before changing infra. Before a first AWS / GitHub Actions deploy, run **`bash scripts/verify_github_actions_deploy_prereqs.sh`** (Terraform validate plus optional AWS identity check).
 
+For **`dev.yml`** and **`test.yml`**, add a **repository** Actions secret **`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`** (your Clerk **test** publishable key, same as local `.env.local`). Next.js runs Clerk during `next build`, and Clerk rejects fake keys.
+
 You can also run the full local stack with Docker:
 
 ```bash

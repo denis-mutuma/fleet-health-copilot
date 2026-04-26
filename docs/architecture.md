@@ -39,7 +39,8 @@ sequenceDiagram
   Web->>API: POST /api/incidents
   API->>Orchestrator: POST /v1/orchestrate/event
   Orchestrator->>Store: Persist telemetry event
-  Orchestrator->>Agents: Execute monitor, retriever, reporter
+  Orchestrator->>Agents: Execute agent pipeline
+  Note right of Agents: Monitor, Retriever, Diagnosis, Planner, Verifier, Reporter
   Agents->>Retrieval: Search runbooks and incident history
   Retrieval-->>Agents: Return ranked evidence
   Agents-->>Orchestrator: Incident report
@@ -98,4 +99,4 @@ Local deployment uses Docker Compose:
 - `web`: production-built Next.js app served with `next start`.
 - `orchestrator`: FastAPI API served by Uvicorn.
 
-CI runs web lint/build, orchestrator tests, and MCP tool tests. Terraform and AWS deployment are the next infrastructure expansion points.
+CI runs web lint/build, orchestrator tests, and MCP tool tests. Infrastructure expansion uses Terraform under `infra/terraform`: remote state bootstrap in [`infra/terraform/bootstrap-state`](../infra/terraform/bootstrap-state), copy [`backend.tf.example`](../infra/terraform/backend.tf.example) to local `backend.tf` per [terraform-bootstrap.md](terraform-bootstrap.md), and the manual [deploy-dev](../.github/workflows/deploy-dev.yml) workflow (fmt/validate; optional `terraform plan` when GitHub secret `AWS_ROLE_ARN` is set). See [aws-deployment-plan.md](aws-deployment-plan.md) for ECS and environment rollout.

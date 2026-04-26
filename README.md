@@ -166,9 +166,9 @@ The web container builds the Next.js app and serves it with `next start`. Supply
 
 ## Current Scope
 
-The current implementation is a concise capstone core: deterministic multi-agent orchestration, lexical RAG (default), optional AWS S3 Vectors RAG, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics, and AWS deployment scaffolding. Retrieval lives in `services/orchestrator/src/fleet_health_orchestrator/rag.py`.
+The current implementation is a concise capstone core: deterministic six-agent orchestration (monitor through reporter), lexical RAG (default), optional AWS S3 Vectors RAG with pluggable embeddings, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics (including retrieval mean reciprocal rank and verifier pass rate), and AWS deployment scaffolding. Retrieval lives in `services/orchestrator/src/fleet_health_orchestrator/rag.py` with helpers in `embeddings.py`.
 
-Next capstone-depth steps are optional LLM-backed report generation, wiring a real embedding model for S3 Vectors queries, and production deployment execution.
+Next capstone-depth steps: optional LLM-backed fields beyond summary refine, wiring production embeddings consistently for S3 Vectors index and query, and executing production deployment (Terraform remote state, OIDC, and optional **`deploy-dev`** GitHub workflow `terraform plan` when **`AWS_ROLE_ARN`** is set).
 
 ## Git and history
 

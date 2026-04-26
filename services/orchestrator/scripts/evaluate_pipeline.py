@@ -11,6 +11,10 @@ def _expected_runbook(event: dict[str, object]) -> str | None:
     metric = str(event.get("metric", ""))
     if "network" in tags or "latency" in tags or "comms" in tags or "network" in metric:
         return "rb_network_latency_v1"
+    if "vibration" in tags or "vibration" in metric or "mechanical" in tags:
+        return "rb_vibration_mechanical_v1"
+    if "cpu" in tags or "cpu" in metric or str(metric).startswith("cpu_"):
+        return "rb_cpu_throttle_v1"
     if "battery" in tags or "thermal" in tags or "battery" in metric:
         return "rb_battery_thermal_v2"
     if "motor" in tags or "current" in tags or "motor" in metric:
@@ -47,7 +51,21 @@ def _retrieval_reciprocal_rank(evidence: dict[str, object], expected_id: str) ->
     return 1.0 / float(runbooks.index(expected_id) + 1)
 
 
-def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
+def evaluate(
+    events_file: Path,
+    base_url: str,
+    *,
+    client: httpx.Client | None = None
+) -> dict[str, float]:
+    """Run metrics over ``events_file``. Pass ``client`` (e.g. ASGI transport) to avoid a live server."""
+    url_base = base_url.rstrip("/")
+
+    def _post_event(event: dict[str, object]) -> httpx.Response:
+        target = f"{url_base}/v1/orchestrate/event"
+        if client is None:
+            return httpx.post(target, json=event, timeout=10.0)
+        return client.post(target, json=event)
+
     total = 0
     expected_anomalies = 0
     true_positives = 0
@@ -74,11 +92,7 @@ def evaluate(events_file: Path, base_url: str) -> dict[str, float]:
                 expected_anomalies += 1
 
             started_at = perf_counter()
-            response = httpx.post(
-                f"{base_url.rstrip('/')}/v1/orchestrate/event",
-                json=event,
-                timeout=10.0
-            )
+            response = _post_event(event)
             response_latency_ms_total += (perf_counter() - started_at) * 1000
             generated_incident = response.status_code == 200
 
@@ -174,7 +188,10 @@ def main() -> None:
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     args = parser.parse_args()
-    metrics = evaluate(events_file=args.events_file, base_url=args.base_url)
+    metrics = evaluate(
+        events_file=args.events_file,
+        base_url=args.base_url,
+    )
     print(json.dumps(metrics, indent=2))
 
 

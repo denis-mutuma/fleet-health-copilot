@@ -74,3 +74,11 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
   role   = aws_iam_role.github_actions[0].id
   policy = data.aws_iam_policy_document.github_actions_ecr[0].json
 }
+
+# GitHub-driven terraform apply needs broad IAM unless you replace this with a custom policy.
+resource "aws_iam_role_policy_attachment" "github_actions_administrator" {
+  count = local.github_oidc_enabled && var.github_actions_attach_administrator_access ? 1 : 0
+
+  role       = aws_iam_role.github_actions[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}

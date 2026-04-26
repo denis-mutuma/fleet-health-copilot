@@ -43,6 +43,12 @@ variable "github_repository" {
   default     = ""
 }
 
+variable "github_actions_attach_administrator_access" {
+  type        = bool
+  description = "When true, attach AWS managed AdministratorAccess to the GitHub OIDC role (convenient for first-time bootstrap; not least-privilege). Default false: attach your own policy to the role (see docs/iam-github-actions.md) or set true explicitly in tfvars."
+  default     = false
+}
+
 variable "enable_managed_secrets" {
   type        = bool
   description = "Whether to create AWS Secrets Manager placeholders for runtime secrets."
@@ -135,4 +141,45 @@ variable "orchestrator_secret_arns" {
   type        = map(string)
   description = "Secret environment variables for the orchestrator task, keyed by environment variable name with Secrets Manager or SSM parameter ARNs as values."
   default     = {}
+}
+
+variable "enable_s3_vectors_rag" {
+  type        = bool
+  description = "When true, create an S3 Vectors vector bucket and index for orchestrator RAG (FLEET_RETRIEVAL_BACKEND=s3vectors)."
+  default     = false
+}
+
+variable "s3_vectors_bucket_name" {
+  type        = string
+  description = "Vector bucket name (globally unique). Leave empty to derive from project prefix and AWS account ID."
+  default     = ""
+}
+
+variable "s3_vectors_index_name" {
+  type        = string
+  description = "Vector index name inside the bucket. Leave empty to derive from project prefix."
+  default     = ""
+}
+
+variable "s3_vectors_embedding_dimension" {
+  type        = number
+  description = "Vector dimension; must match FLEET_S3_VECTORS_EMBEDDING_DIM and your embedding model."
+  default     = 384
+}
+
+variable "s3_vectors_distance_metric" {
+  type        = string
+  description = "Index distance metric: cosine or euclidean."
+  default     = "cosine"
+
+  validation {
+    condition     = contains(["cosine", "euclidean"], var.s3_vectors_distance_metric)
+    error_message = "s3_vectors_distance_metric must be cosine or euclidean."
+  }
+}
+
+variable "s3_vectors_force_destroy" {
+  type        = bool
+  description = "When true, allow Terraform destroy to empty the vector bucket first."
+  default     = false
 }

@@ -75,35 +75,38 @@ header: "Fleet Health Copilot"
 
 # Evaluation
 
-- `evaluate_pipeline.py`: precision, recall, retrieval MRR, verifier pass rate, latency
-- Expanded `sample_events.jsonl` for richer metric stress
+- Confusion matrix: true/false positives and negatives; precision, recall, accuracy
+- Retrieval: hit rate and mean reciprocal rank for expected runbook IDs
+- Workflow: verifier pass rate, runbook action grounding rate, latency
+
+`evaluate_pipeline.py` replays [sample_events.jsonl](../services/orchestrator/data/sample_events.jsonl) (battery, motor, network, vibration, CPU thermal, and true negatives).
 
 ---
 
 # CI and quality
 
-- PR workflow: web lint/build, Python tests
-- Manual `deploy-dev`: Terraform fmt/validate; optional AWS plan when `AWS_ROLE_ARN` is set
-- Remote state: `terraform-bootstrap.md` + `backend.tf.example`
+- PR workflow: web lint/build, Python tests, MCP packages, `scripts/validate_terraform.sh`
+- **deploy-aws**: push **`develop` / `staging` / `main`** → OIDC + S3 state + **`terraform apply`** + ECR + second apply (commit SHA)
+- Remote state: [terraform-bootstrap.md](terraform-bootstrap.md) and [backend.tf.example](../infra/terraform/backend.tf.example)
 
 ---
 
 # Limitations
 
-- Production embeddings and IAM work for meaningful S3 ANN
-- Optional LLM copy refine behind env flags
-- Full `terraform apply` still operator-driven until account wiring
+- Local default is lexical RAG; S3 Vectors needs matching embeddings and IAM for meaningful ANN
+- Agents are mostly deterministic; optional OpenAI summary refine only
+- Terraform **`apply`** and remote state are operator-driven until your account is wired
 
 ---
 
 # Next steps
 
-- Same embedding provider for index and query in AWS
-- Remote state + OIDC + dev apply
-- Deck polish and optional UI refinements
+- Same **`FLEET_EMBEDDING_PROVIDER`** and dimension for **`index_s3_vectors.py`** and orchestrator query
+- OIDC role + **`AWS_ROLE_ARN`** for CI plan; bootstrap bucket for shared state
+- Optional LLM-backed diagnosis/planning; larger eval seed set
 
 ---
 
 # Closing
 
-Modular, production-oriented AI ops for robotic fleets: multi-agent workflow, RAG, MCP, and clear extension points.
+Fleet Health Copilot: multi-agent workflow, RAG, MCP tools, authenticated web UI, Docker, CI, and a clear path to AWS—all explainable without hardware.

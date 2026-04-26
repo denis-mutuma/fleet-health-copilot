@@ -3,6 +3,15 @@ locals {
   orchestrator_efs_enabled     = var.enable_ecs && var.enable_orchestrator_efs
   orchestrator_db_path         = local.orchestrator_efs_enabled ? "${local.orchestrator_data_mount_path}/fleet-health.db" : lookup(var.orchestrator_environment, "FLEET_DB_PATH", "/tmp/fleet-health.db")
 
+  # When ECS and S3 Vectors RAG are both enabled, inject vector settings into the orchestrator task.
+  orchestrator_s3_vectors_env = (var.enable_ecs && var.enable_s3_vectors_rag) ? {
+    FLEET_RETRIEVAL_BACKEND        = "s3vectors"
+    FLEET_S3_VECTORS_BUCKET        = aws_s3vectors_vector_bucket.rag[0].vector_bucket_name
+    FLEET_S3_VECTORS_INDEX         = aws_s3vectors_index.rag[0].index_name
+    FLEET_S3_VECTORS_INDEX_ARN     = aws_s3vectors_index.rag[0].index_arn
+    FLEET_S3_VECTORS_EMBEDDING_DIM = tostring(var.s3_vectors_embedding_dimension)
+  } : {}
+
   ecs_services = {
     web = {
       cpu       = 512
@@ -23,13 +32,17 @@ locals {
       secrets = merge(local.managed_web_secret_arns, var.web_secret_arns)
     }
     orchestrator = {
-      cpu         = 512
-      memory      = 1024
-      port        = 8000
-      image       = "${aws_ecr_repository.service["orchestrator"].repository_url}:${lookup(var.container_image_tags, "orchestrator", "latest")}"
-      log_group   = "/ecs/${local.name_prefix}/orchestrator"
-      environment = merge(var.orchestrator_environment, { FLEET_DB_PATH = local.orchestrator_db_path })
-      secrets     = var.orchestrator_secret_arns
+      cpu       = 512
+      memory    = 1024
+      port      = 8000
+      image     = "${aws_ecr_repository.service["orchestrator"].repository_url}:${lookup(var.container_image_tags, "orchestrator", "latest")}"
+      log_group = "/ecs/${local.name_prefix}/orchestrator"
+      environment = merge(
+        var.orchestrator_environment,
+        { FLEET_DB_PATH = local.orchestrator_db_path },
+        local.orchestrator_s3_vectors_env
+      )
+      secrets = var.orchestrator_secret_arns
     }
   }
 
@@ -169,10 +182,6 @@ resource "aws_service_discovery_service" "orchestrator" {
     }
 
     routing_policy = "MULTIVALUE"
-  }
-
-  health_check_custom_config {
-    failure_threshold = 1
   }
 
   tags = local.common_tags

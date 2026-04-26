@@ -2,6 +2,10 @@
 
 Use this when demoing **Amazon S3 Vectors** alongside the orchestrator ([`rag.py`](../services/orchestrator/src/fleet_health_orchestrator/rag.py), [`embeddings.py`](../services/orchestrator/src/fleet_health_orchestrator/embeddings.py)).
 
+## 0. Optional Terraform provisioning
+
+The root module can create an S3 Vectors **vector bucket** and **index** when **`enable_s3_vectors_rag = true`** (AWS provider 6.35+). See [aws-deployment-plan.md](aws-deployment-plan.md), [terraform-bootstrap.md](terraform-bootstrap.md), and [env/s3vectors.example.tfvars](../infra/terraform/env/s3vectors.example.tfvars). With **`enable_ecs`**, the orchestrator task role receives **`s3vectors:PutVectors`**, **`QueryVectors`**, and **`GetVectors`** on those resources. You still run **`index_s3_vectors.py`** after **`index_documents.py`** with the same embedding settings as production queries.
+
 ## 1. Index and query must match
 
 - Set **`FLEET_S3_VECTORS_EMBEDDING_DIM`** to the **index dimension** (e.g. `384` for `all-MiniLM-L6-v2`, or the OpenAI embedding model output size).
@@ -11,9 +15,12 @@ Use this when demoing **Amazon S3 Vectors** alongside the orchestrator ([`rag.py
 ```bash
 .venv/bin/python services/orchestrator/scripts/index_s3_vectors.py \
   --bucket YOUR_VECTOR_BUCKET \
-  --index YOUR_INDEX_NAME
+  --index YOUR_INDEX_NAME \
+  --embedding-provider openai
 # or: --index-arn arn:aws:s3vectors:...
 ```
+
+Optional **`--embedding-provider`** matches **`FLEET_EMBEDDING_PROVIDER`** on the orchestrator (defaults follow the environment). The script prints the resolved provider and dimension to **stderr** before **`put_vectors`** so you can confirm parity with query-time settings.
 
 Use **`--dry-run`** first to confirm batch counts.
 

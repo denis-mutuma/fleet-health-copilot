@@ -32,7 +32,7 @@ Non-goals for the current MVP:
 
 - Physical hardware integration.
 - Autonomous remediation.
-- Full AWS deployment.
+- Operating a hosted multi-tenant cloud product (the repo ships **IaC and GitHub Actions** for **your** AWS account; applying it remains an operator responsibility).
 - LLM-generated actions without evidence grounding.
 
 ## Implementation Overview
@@ -108,11 +108,27 @@ The evaluation helper replays sample telemetry events through `/v1/orchestrate/e
 
 The current seed set includes:
 
-- battery thermal drift anomaly on `robot-03`,
-- motor current spike anomaly on `robot-07`,
-- normal motor current event on `robot-11`.
+- battery thermal drift anomalies on `robot-03` (and a below-threshold control on `robot-05`),
+- motor current spike anomalies on `robot-07`,
+- normal motor current event on `robot-11`,
+- network latency high and normal events on `robot-09` and `robot-14`,
+- vibration RMS anomaly and normal on `robot-12`,
+- CPU thermal anomaly and normal on `robot-15`.
 
 This is intentionally small but honest: metric names map directly to the anomaly detection behavior being demonstrated.
+
+## Failure cases (operator)
+
+Short triage reference for demos and deployments:
+
+- **RAG miss:** no or weak evidence in the incident report—run [`index_documents.py`](../services/orchestrator/scripts/index_documents.py) (or S3 Vectors indexing) and confirm query terms align with corpus titles.
+- **Verifier fail:** recommended actions cite runbook IDs that were not in the retrieval set—fix corpus or adjust the event so the expected runbook ranks; see verifier rules in [`agents.py`](../services/orchestrator/src/fleet_health_orchestrator/agents.py).
+- **S3 Vectors IAM errors:** task role missing `s3vectors:QueryVectors` / `GetVectors`, or wrong index ARN—see [s3-vectors-operations.md](s3-vectors-operations.md).
+- **ECS image pull failure:** ECR repository or digest missing for the task definition tag—re-run **`deploy-aws`** or verify `container_image_tags` in Terraform.
+
+## Performance
+
+End-to-end latency and per-request timings are reported by [`evaluate_pipeline.py`](../services/orchestrator/scripts/evaluate_pipeline.py) (orchestration and time-to-diagnosis fields in its JSON output). For cloud runs, use **CloudWatch** logs and metrics (ECS task, ALB target response time) once you enable the standard AWS observability path described in [aws-deployment-plan.md](aws-deployment-plan.md).
 
 ## Production Readiness Work
 
@@ -127,9 +143,9 @@ Completed hardening:
 
 Known remaining gaps:
 
-- S3 Vectors **ANN quality** still depends on using the same **`FLEET_EMBEDDING_PROVIDER`** (e.g. `openai`, `http`, `sentence_transformers`) and dimension for both [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) and live queries; the default `hash` provider is deterministic only. See [s3-vectors-operations.md](s3-vectors-operations.md).
-- Terraform root module is not yet **applied** end-to-end in a shared account (bootstrap + `backend.tf.example` + optional CI plan are prepared).
-- Agents remain **mostly deterministic**; optional OpenAI summary refinement exists behind env flags ([`llm.py`](../services/orchestrator/src/fleet_health_orchestrator/llm.py)), not full LLM planning.
+- S3 Vectors **ANN quality** still depends on using the same **`FLEET_EMBEDDING_PROVIDER`** (e.g. `openai`, `http`, `sentence_transformers`) and dimension for both [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) and live queries; the default `hash` provider is deterministic only (the API logs a warning when `s3vectors` + hash). See [s3-vectors-operations.md](s3-vectors-operations.md).
+- **Applying** Terraform in a specific AWS account, populating secrets, and validating ECS networking are **operator** steps. The repository already includes **S3 remote state**, **OIDC-based GitHub Actions** ([`deploy-aws.yml`](../.github/workflows/deploy-aws.yml)), and env tfvars; optional **`enable_s3_vectors_rag`** can create the vector bucket and index; **managed RDS** is still out of scope.
+- Agents remain **deterministic for planning and verification**; optional OpenAI **summary refine** and **diagnosis enrichment** exist behind env flags ([`llm.py`](../services/orchestrator/src/fleet_health_orchestrator/llm.py)); there is no LLM-authored action list outside verifier rules.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
 
 ## Capstone Requirement Mapping
@@ -143,7 +159,7 @@ Known remaining gaps:
 | MCP tool access | Implemented: telemetry, retrieval, incidents |
 | Evaluation metrics | Implemented with confusion-matrix output |
 | Architecture documentation | Implemented |
-| Cloud deployment story | Partially prepared through Docker, Terraform, and optional S3 Vectors retrieval |
+| Cloud deployment story | Implemented in repo: Docker, Terraform (optional S3 Vectors + ECS), **GitHub Actions `deploy-aws`** with **OIDC** and **S3 backend**; applying to **your** account and secrets is operator-owned ([aws-deployment-plan.md](aws-deployment-plan.md)) |
 
 ## Next Steps
 
@@ -151,7 +167,7 @@ Recommended next implementation steps:
 
 1. Configure **`FLEET_EMBEDDING_PROVIDER`** and dimension consistently for S3 Vectors **query** and **`index_s3_vectors.py`** ingestion so ANN matches production vectors (see [s3-vectors-operations.md](s3-vectors-operations.md)).
 2. Deepen diagnosis or verifier grounding against retrieved evidence, or introduce optional LLM-backed variants.
-3. Add a deployed environment using Terraform and GitHub Actions.
+3. Validate **`deploy-aws`** in a dev AWS account (OIDC role, state bucket, first green ECS path if enabled).
 4. Expand the evaluation dataset beyond the current small seed set.
 5. Add a presentation deck using `docs/presentation-outline.md`.
 

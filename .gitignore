@@ -15,6 +15,7 @@ infra/terraform/.terraform/
 infra/terraform/bootstrap-state/.terraform/
 infra/terraform/backend.tf
 infra/terraform/backend.hcl
+infra/terraform/backend.ci.hcl
 *.tfstate
 *.tfstate.*
 

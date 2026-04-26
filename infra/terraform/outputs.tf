@@ -44,3 +44,29 @@ output "orchestrator_database_path" {
   value       = var.enable_ecs ? local.orchestrator_db_path : null
   description = "Database path configured for the orchestrator task when ECS is enabled."
 }
+
+output "s3_vectors_bucket_name" {
+  value       = var.enable_s3_vectors_rag ? aws_s3vectors_vector_bucket.rag[0].vector_bucket_name : null
+  description = "S3 Vectors bucket name when enable_s3_vectors_rag is true."
+}
+
+output "s3_vectors_index_name" {
+  value       = var.enable_s3_vectors_rag ? aws_s3vectors_index.rag[0].index_name : null
+  description = "S3 Vectors index name when enable_s3_vectors_rag is true."
+}
+
+output "s3_vectors_index_arn" {
+  value       = var.enable_s3_vectors_rag ? aws_s3vectors_index.rag[0].index_arn : null
+  description = "S3 Vectors index ARN for FLEET_S3_VECTORS_INDEX_ARN when enable_s3_vectors_rag is true."
+}
+
+output "s3_vectors_orchestrator_env_hint" {
+  value = var.enable_s3_vectors_rag ? {
+    FLEET_RETRIEVAL_BACKEND        = "s3vectors"
+    FLEET_S3_VECTORS_BUCKET        = aws_s3vectors_vector_bucket.rag[0].vector_bucket_name
+    FLEET_S3_VECTORS_INDEX         = aws_s3vectors_index.rag[0].index_name
+    FLEET_S3_VECTORS_INDEX_ARN     = aws_s3vectors_index.rag[0].index_arn
+    FLEET_S3_VECTORS_EMBEDDING_DIM = tostring(var.s3_vectors_embedding_dimension)
+  } : null
+  description = "Suggested orchestrator environment variables after apply (set FLEET_EMBEDDING_PROVIDER to match index_s3_vectors.py)."
+}

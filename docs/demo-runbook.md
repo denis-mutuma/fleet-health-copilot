@@ -44,7 +44,7 @@ npm run web:dev
 
 ## Rehearsal checklist
 
-- Confirm orchestrator `/health` and web load after `npm run web:dev`.
+- Confirm orchestrator `/health`, `/ready`, and web load after `npm run web:dev`.
 - Run `index_documents.py` so RAG retrieval is non-empty before simulation.
 - Walk one **battery**, one **motor**, and one **network** incident; open detail and read verification + evidence.
 - Run `evaluate_pipeline.py` once and skim `verifier_pass_rate` and retrieval metrics.
@@ -71,33 +71,26 @@ Run the evaluation helper:
 .venv/bin/python services/orchestrator/scripts/evaluate_pipeline.py
 ```
 
-Expected output shape:
+A checked-in snapshot of the JSON metrics (same seed files, no live port) lives in [capstone-demo-artifacts.md](capstone-demo-artifacts.md). Regenerate it after changing runbooks or sample events:
 
-```json
-{
-  "events_total": 8.0,
-  "expected_anomalies": 5.0,
-  "incidents_generated": 5.0,
-  "true_positives": 5.0,
-  "false_positives": 0.0,
-  "false_negatives": 0.0,
-  "true_negatives": 3.0,
-  "precision": 1.0,
-  "recall": 1.0,
-  "accuracy": 1.0,
-  "retrieval_expected": 4.0,
-  "retrieval_hits": 4.0,
-  "retrieval_hit_rate": 1.0,
-  "retrieval_mean_reciprocal_rank": 1.0,
-  "verifier_pass_rate": 1.0,
-  "runbook_action_grounding_rate": 1.0,
-  "agent_task_success_rate": 1.0,
-  "average_response_latency_ms": 12.3,
-  "average_time_to_diagnosis_ms": 1.2
-}
+```bash
+PYTHONPATH=services/orchestrator/src .venv/bin/python scripts/capture_capstone_eval_snapshot.py
 ```
 
-The exact values can change if seed events or runbooks change, but the important presentation point is that the metric names map to real confusion-matrix, retrieval (including mean reciprocal rank of the expected runbook), agent-success, and latency checks.
+The exact numeric values can drift with hardware and seed edits, but the metric names map to real confusion-matrix, retrieval (including mean reciprocal rank of the expected runbook), agent-success, and latency checks.
+
+For **latency** in AWS, use the JSON fields from `evaluate_pipeline.py` locally first; in ECS, pair that narrative with **CloudWatch** log-derived duration or ALB target response metrics once you enable observability.
+
+## Failure cases (demo QA)
+
+If something looks wrong during rehearsal, use this short triage list:
+
+| Symptom | Likely cause | What to do |
+| --- | --- | --- |
+| Empty evidence / generic actions | RAG miss (no indexed runbooks or lexical mismatch) | Run `index_documents.py`; confirm query terms overlap seed titles. |
+| Verification warnings or blocked actions | Verifier rejected citations not present in retrieval | Re-run after indexing; avoid citing runbook IDs that were not retrieved. |
+| `s3vectors` errors in logs | IAM or wrong bucket/index/embedding dimension | Check `s3vectors:QueryVectors` (and `GetVectors` if needed), env vars, and [s3-vectors-operations.md](s3-vectors-operations.md). |
+| ECS task stuck / unhealthy | Image pull, secrets, or DB volume | Inspect task stopped reason, ECR tag exists, Secrets Manager values populated, EFS mount for SQLite. |
 
 ## MCP Tool Demo
 

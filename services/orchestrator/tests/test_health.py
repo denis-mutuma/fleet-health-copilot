@@ -219,6 +219,44 @@ def test_health_endpoint(tmp_path, monkeypatch) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_ready_endpoint(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+def test_cors_reflects_configured_origin(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("FLEET_CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("FLEET_DB_PATH", str(tmp_path / "cors.db"))
+    main_module = importlib.import_module("fleet_health_orchestrator.main")
+    main_module = importlib.reload(main_module)
+    client = TestClient(main_module.app)
+    response = client.get(
+        "/health",
+        headers={"Origin": "https://app.example.com"}
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "https://app.example.com"
+
+
+def test_cors_not_enabled_without_env(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("FLEET_CORS_ORIGINS", raising=False)
+    monkeypatch.setenv("FLEET_DB_PATH", str(tmp_path / "no_cors.db"))
+    main_module = importlib.import_module("fleet_health_orchestrator.main")
+    main_module = importlib.reload(main_module)
+    client = TestClient(main_module.app)
+    response = client.get(
+        "/health",
+        headers={"Origin": "https://app.example.com"}
+    )
+
+    assert response.status_code == 200
+    assert "access-control-allow-origin" not in response.headers
+
+
 def test_event_ingestion_and_listing(tmp_path, monkeypatch) -> None:
     client = _build_client(tmp_path, monkeypatch)
     payload = {
@@ -523,6 +561,18 @@ def test_retrieval_reciprocal_rank_helper() -> None:
     ) == pytest.approx(0.5)
     assert evaluate_pipeline._retrieval_reciprocal_rank({"runbooks": ["rb_x"]}, "rb_x") == 1.0
     assert evaluate_pipeline._retrieval_reciprocal_rank({}, "rb_x") == 0.0
+
+
+def test_expected_runbook_vibration() -> None:
+    evaluate_pipeline = _load_evaluate_pipeline()
+    event = {"tags": ["vibration", "mechanical"], "metric": "vibration_rms"}
+    assert evaluate_pipeline._expected_runbook(event) == "rb_vibration_mechanical_v1"
+
+
+def test_expected_runbook_cpu() -> None:
+    evaluate_pipeline = _load_evaluate_pipeline()
+    event = {"tags": ["cpu", "thermal"], "metric": "cpu_temp_c"}
+    assert evaluate_pipeline._expected_runbook(event) == "rb_cpu_throttle_v1"
 
 
 def test_verifier_rejects_citations_outside_retrieval() -> None:

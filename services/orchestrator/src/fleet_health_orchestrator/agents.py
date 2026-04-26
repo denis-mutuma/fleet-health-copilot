@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from time import perf_counter
 from uuid import uuid4
 
-from fleet_health_orchestrator.llm import refine_incident_summary
+from fleet_health_orchestrator.llm import enrich_diagnosis_hypotheses, refine_incident_summary
 from fleet_health_orchestrator.models import IncidentReport, RetrievalHit, TelemetryEvent
 from fleet_health_orchestrator.rag import LexicalRetrievalBackend, RetrievalBackend
 
@@ -56,7 +56,9 @@ class DiagnosisAgent:
         hypotheses: list[str] = []
         tags = set(event.tags)
 
-        if "battery" in tags or "thermal" in tags:
+        if "cpu" in tags or "cpu" in event.metric:
+            hypotheses.extend(["thermal throttling risk", "cooling subsystem stress"])
+        elif "battery" in tags or "thermal" in tags:
             hypotheses.extend(["cooling degradation", "ambient overload"])
         elif "motor" in tags or "current" in tags:
             hypotheses.extend(["mechanical resistance", "load profile drift"])
@@ -70,9 +72,12 @@ class DiagnosisAgent:
             if hit.title.strip():
                 hypotheses.append(f"retrieved context: {hit.title.strip()}")
 
+        hypotheses = list(dict.fromkeys(hypotheses))
+        hypotheses.extend(enrich_diagnosis_hypotheses(event, hits, hypotheses))
+        hypotheses = list(dict.fromkeys(hypotheses))
         confidence_score = min(0.95, 0.55 + (0.1 * len(hits)))
         return DiagnosisResult(
-            hypotheses=list(dict.fromkeys(hypotheses)),
+            hypotheses=hypotheses,
             confidence_score=round(confidence_score, 2)
         )
 

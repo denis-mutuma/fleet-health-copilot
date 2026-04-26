@@ -72,6 +72,15 @@ def main() -> int:
         help="Must match the index dimension and the embedding provider output.",
     )
     parser.add_argument(
+        "--embedding-provider",
+        default=None,
+        metavar="PROVIDER",
+        help=(
+            "Override FLEET_EMBEDDING_PROVIDER for this run (hash, openai, http, "
+            "sentence_transformers). When omitted, the indexer uses the same env vars as the API."
+        ),
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=50,
@@ -101,7 +110,18 @@ def main() -> int:
         print("No rag_documents in database; index runbooks first (index_documents.py).", file=sys.stderr)
         return 1
 
-    embed = create_query_embedder(args.embedding_dim)
+    provider = (args.embedding_provider or "").strip() or None
+    embed = create_query_embedder(args.embedding_dim, provider=provider)
+    resolved = (
+        provider
+        if provider is not None
+        else (os.getenv("FLEET_EMBEDDING_PROVIDER") or "hash")
+    ).strip().lower() or "hash"
+    print(
+        f"embedding: provider={resolved!r} dim={args.embedding_dim} "
+        "(orchestrator must use the same FLEET_EMBEDDING_PROVIDER and FLEET_S3_VECTORS_EMBEDDING_DIM)",
+        file=sys.stderr,
+    )
     batches: list[list[dict[str, object]]] = []
     current: list[dict[str, object]] = []
     for doc in documents:

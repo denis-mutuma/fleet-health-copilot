@@ -1,0 +1,219 @@
+# Automatic AWS deploy on push (branch → GitHub Environment + tfvars):
+#   main    → environment "prod"  + infra/terraform/env/prod.tfvars
+#   develop → "dev"   + env/dev.tfvars
+#   staging → "test"  + env/test.tfvars
+#
+# Requires GitHub Environments (same names: dev, test, prod), each with secrets:
+#   AWS_ROLE_ARN        — IAM role ARN (OIDC). Default Terraform does NOT attach AdministratorAccess;
+#                         use github_actions_attach_administrator_access=true in tfvars for bootstrap or attach a scoped policy (docs/iam-github-actions.md).
+#   TF_STATE_BUCKET     — S3 bucket from bootstrap-state
+#   TF_LOCK_TABLE       — DynamoDB lock table from bootstrap-state
+#   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY — web Docker build (publishable key is fine in Actions secret)
+#
+# Optional secrets (when ENABLE_ECS=true repository variable):
+#   VPC_ID
+#   PUBLIC_SUBNET_IDS_JSON — JSON array string, e.g. ["subnet-aaa","subnet-bbb"]
+#   WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL — browser → API URL after you have an ALB/domain
+#
+# Repository variables:
+#   ENABLE_ECS — set "true" after first successful deploy (ECR exists) to roll out ECS.
+#   AWS_REGION — optional (defaults us-east-1 in configure-aws-credentials via env).
+
+name: deploy-aws
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - staging
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+
+concurrency:
+  group: deploy-aws-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      tfvars_env: ${{ steps.pick.outputs.tfvars_env }}
+      gh_environment: ${{ steps.pick.outputs.gh_environment }}
+    steps:
+      - id: pick
+        name: Map branch or dispatch to environment
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            E="${{ github.event.inputs.environment }}"
+            echo "tfvars_env=$E" >> "$GITHUB_OUTPUT"
+            echo "gh_environment=$E" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "${{ github.ref }}" in
+            refs/heads/main)
+              echo "tfvars_env=prod" >> "$GITHUB_OUTPUT"
+              echo "gh_environment=prod" >> "$GITHUB_OUTPUT"
+              ;;
+            refs/heads/develop)
+              echo "tfvars_env=dev" >> "$GITHUB_OUTPUT"
+              echo "gh_environment=dev" >> "$GITHUB_OUTPUT"
+              ;;
+            refs/heads/staging)
+              echo "tfvars_env=test" >> "$GITHUB_OUTPUT"
+              echo "gh_environment=test" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Branch ${{ github.ref }} is not configured for deploy-aws."
+              exit 1
+              ;;
+          esac
+
+  deploy:
+    needs: select
+    runs-on: ubuntu-latest
+    environment: ${{ needs.select.outputs.gh_environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_KEY: fleet-health-copilot/${{ needs.select.outputs.tfvars_env }}/terraform.tfstate
+      TF_ENV: ${{ needs.select.outputs.tfvars_env }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require OIDC, remote state, and Clerk secrets
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_LOCK_TABLE: ${{ secrets.TF_LOCK_TABLE }}
+          CLERK_PK: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          for name in AWS_ROLE_ARN TF_STATE_BUCKET TF_LOCK_TABLE CLERK_PK; do
+            eval "v=\${$name:-}"
+            if [ -z "${v}" ]; then
+              echo "::error::Missing required secret $name on GitHub Environment ${{ needs.select.outputs.gh_environment }}."
+              exit 1
+            fi
+          done
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+          terraform_wrapper: false
+
+      - name: Write S3 remote backend (required)
+        working-directory: infra/terraform
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          TF_LOCK_TABLE: ${{ secrets.TF_LOCK_TABLE }}
+        run: |
+          {
+            echo "bucket         = \"${TF_STATE_BUCKET}\""
+            echo "key            = \"${TF_STATE_KEY}\""
+            echo "region         = \"${AWS_REGION}\""
+            echo "dynamodb_table = \"${TF_LOCK_TABLE}\""
+            echo "encrypt        = true"
+          } > backend.ci.hcl
+
+      - name: Terraform fmt (check)
+        run: terraform fmt -check
+        working-directory: infra/terraform
+
+      - name: Terraform init (S3 backend)
+        run: terraform init -input=false -backend-config=backend.ci.hcl
+        working-directory: infra/terraform
+
+      - name: Terraform apply (bootstrap infra; ECS uses :latest until images are pushed)
+        working-directory: infra/terraform
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+          ENABLE_ECS: ${{ vars.ENABLE_ECS == 'true' && 'true' || 'false' }}
+          VPC_ID: ${{ secrets.VPC_ID }}
+          SUBNETS_JSON: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
+          ORCH_URL: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
+          TF_VAR_web_next_public_clerk_publishable_key: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          EXTRA=(
+            -var-file="env/${TF_ENV}.tfvars"
+            -var="github_repository=${GITHUB_REPO}"
+            -var="enable_ecs=${ENABLE_ECS}"
+            -var='container_image_tags={web=latest,orchestrator=latest}'
+          )
+          if [ -n "${VPC_ID:-}" ]; then EXTRA+=( -var="vpc_id=${VPC_ID}" ); fi
+          if [ -n "${SUBNETS_JSON:-}" ]; then EXTRA+=( -var="public_subnet_ids=${SUBNETS_JSON}" ); fi
+          if [ -n "${ORCH_URL:-}" ]; then EXTRA+=( -var="web_next_public_orchestrator_api_base_url=${ORCH_URL}" ); fi
+          terraform apply -auto-approve -input=false "${EXTRA[@]}"
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve ECR URLs from Terraform
+        id: repos
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          JSON=$(terraform output -json ecr_repository_urls)
+          echo "web=$(echo "$JSON" | jq -r '.["web"]')" >> "$GITHUB_OUTPUT"
+          echo "orchestrator=$(echo "$JSON" | jq -r '.["orchestrator"]')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.repos.outputs.web }}:${{ github.sha }}
+            ${{ steps.repos.outputs.web }}:latest
+          build-args: |
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+
+      - name: Build and push orchestrator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/orchestrator/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.repos.outputs.orchestrator }}:${{ github.sha }}
+            ${{ steps.repos.outputs.orchestrator }}:latest
+
+      - name: Terraform apply (pin running tasks to this commit SHA)
+        working-directory: infra/terraform
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+          ENABLE_ECS: ${{ vars.ENABLE_ECS == 'true' && 'true' || 'false' }}
+          VPC_ID: ${{ secrets.VPC_ID }}
+          SUBNETS_JSON: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
+          ORCH_URL: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
+          TF_VAR_web_next_public_clerk_publishable_key: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          SHA="${{ github.sha }}"
+          EXTRA=(
+            -var-file="env/${TF_ENV}.tfvars"
+            -var="github_repository=${GITHUB_REPO}"
+            -var="enable_ecs=${ENABLE_ECS}"
+            -var="container_image_tags={web=${SHA},orchestrator=${SHA}}"
+          )
+          if [ -n "${VPC_ID:-}" ]; then EXTRA+=( -var="vpc_id=${VPC_ID}" ); fi
+          if [ -n "${SUBNETS_JSON:-}" ]; then EXTRA+=( -var="public_subnet_ids=${SUBNETS_JSON}" ); fi
+          if [ -n "${ORCH_URL:-}" ]; then EXTRA+=( -var="web_next_public_orchestrator_api_base_url=${ORCH_URL}" ); fi
+          terraform apply -auto-approve -input=false "${EXTRA[@]}"

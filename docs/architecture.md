@@ -99,4 +99,4 @@ Local deployment uses Docker Compose:
 - `web`: production-built Next.js app served with `next start`.
 - `orchestrator`: FastAPI API served by Uvicorn.
 
-CI runs web lint/build, orchestrator tests, and MCP tool tests. Infrastructure expansion uses Terraform under `infra/terraform`: remote state bootstrap in [`infra/terraform/bootstrap-state`](../infra/terraform/bootstrap-state), copy [`backend.tf.example`](../infra/terraform/backend.tf.example) to local `backend.tf` per [terraform-bootstrap.md](terraform-bootstrap.md), and the manual [deploy-dev](../.github/workflows/deploy-dev.yml) workflow (fmt/validate; optional `terraform plan` when GitHub secret `AWS_ROLE_ARN` is set). See [aws-deployment-plan.md](aws-deployment-plan.md) for ECS and environment rollout.
+CI runs web lint/build, orchestrator tests, and MCP tool tests on pull requests. Continuous AWS deploy uses **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)** with **S3 + DynamoDB** remote state (see [terraform-bootstrap.md](terraform-bootstrap.md)) and **GitHub OIDC**. See [aws-deployment-plan.md](aws-deployment-plan.md) for ECS and environment rollout.

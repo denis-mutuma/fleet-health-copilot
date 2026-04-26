@@ -2,7 +2,10 @@ name: test
 
 on:
   pull_request:
-    branches: ["main"]
+    branches:
+      - main
+      - develop
+      - staging
 
 jobs:
   quality-gates:
@@ -32,3 +35,10 @@ jobs:
           PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry/tests
           PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
           PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Terraform fmt and validate (no remote backend)
+        run: bash scripts/validate_terraform.sh

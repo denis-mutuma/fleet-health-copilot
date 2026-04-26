@@ -85,7 +85,7 @@ Export-friendly deck aligned with [presentation-outline.md](presentation-outline
 ## Slide 10 — CI and quality
 
 - PR workflow: web lint/build, orchestrator + MCP tests
-- Terraform `fmt` / `validate` via `deploy-dev` (manual dispatch)
+- Terraform `fmt` / `validate` locally; **`deploy-aws`** on push for OIDC + S3 state + apply + ECR
 - Remote state bootstrap documented in [terraform-bootstrap.md](terraform-bootstrap.md)
 
 ---

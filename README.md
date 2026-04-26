@@ -57,6 +57,12 @@ cp apps/web/.env.example apps/web/.env.local
 
 Set real `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` values in `apps/web/.env.local`. The default orchestrator URL is `http://127.0.0.1:8000`.
 
+Optional orchestrator HTTP settings:
+
+- `FLEET_DB_PATH` points the SQLite file used by the API (default under `services/orchestrator/data/`).
+- `FLEET_CORS_ORIGINS` is a comma-separated list of allowed browser origins (for example `https://your-web-alb.example.com`). When unset, **no** CORS middleware is registered (fine for server-to-server or local Next.js API routes). When set, the orchestrator sends a tight `Access-Control-Allow-Origin` for those origins—use this when `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` exposes the orchestrator directly to the browser (common with ECS + ALB).
+- `GET /health` returns process up. `GET /ready` returns **200** only when the SQLite parent directory is writable, SQLite answers `SELECT 1`, and the repository can list RAG metadata—useful for load-balancer readiness checks.
+
 Optional orchestrator retrieval settings:
 
 - `FLEET_RETRIEVAL_BACKEND=lexical` keeps the local default lexical token search.
@@ -68,6 +74,8 @@ Optional orchestrator retrieval settings:
 IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or filters are returned (the backend sets `returnMetadata=true`). For indexing scripts, also grant `s3vectors:PutVectors`.
 
 **Query embeddings** (`FLEET_EMBEDDING_PROVIDER`, default `hash`): `hash` (deterministic, no extra deps), `openai` (`FLEET_OPENAI_API_KEY`, `FLEET_OPENAI_EMBEDDING_MODEL`), `http` (`FLEET_EMBEDDING_HTTP_URL` returning JSON `{"embedding":[...]}`), or `sentence_transformers` (install `pip install -e "services/orchestrator[embeddings]"` and set `FLEET_SENTENCE_TRANSFORMER_MODEL`). The embedding dimension must match the S3 Vectors index.
+
+**Optional OpenAI assist** (requires `FLEET_OPENAI_API_KEY`): set `FLEET_OPENAI_REPORT_REFINE=true` to rewrite the one-line incident summary (`llm.py`). Set `FLEET_OPENAI_DIAGNOSIS_ENRICH=true` to add up to two extra diagnosis hypotheses grounded only in retrieval titles (`FLEET_OPENAI_DIAGNOSIS_MODEL` defaults to `gpt-4o-mini`). Recommended actions still come from deterministic planner + verifier rules.
 
 **Index vectors from SQLite** (after runbooks are in the DB):
 
@@ -94,12 +102,7 @@ Open `http://localhost:3000`, sign in, and use the simulation button to create a
 
 ## Demo Script
 
-The local seed data covers two anomaly scenarios:
-
-- Battery thermal drift on `robot-03`.
-- Motor current spike on `robot-07`.
-
-It also includes one normal motor-current event so the evaluation can report true negatives.
+The local seed data covers multiple scenarios in `services/orchestrator/data/sample_events.jsonl` (battery thermal, motor current, network latency, vibration RMS, and true-negative controls). A reproducible evaluation snapshot is in [docs/capstone-demo-artifacts.md](docs/capstone-demo-artifacts.md).
 
 With the orchestrator running, index sample runbooks and historical incidents:
 
@@ -119,7 +122,7 @@ Run the end-to-end evaluation helper:
 .venv/bin/python services/orchestrator/scripts/evaluate_pipeline.py
 ```
 
-The evaluation helper posts each event to `/v1/orchestrate/event` and reports anomaly precision/recall, retrieval hit rate, agent task success rate, response latency, and time-to-diagnosis.
+The evaluation helper posts each event to `/v1/orchestrate/event` and reports anomaly precision/recall, retrieval hit rate, agent task success rate, response latency, and time-to-diagnosis. To refresh the checked-in metric snapshot without Uvicorn, run `PYTHONPATH=services/orchestrator/src .venv/bin/python scripts/capture_capstone_eval_snapshot.py`.
 
 Then refresh the dashboard and open an incident detail page to inspect summary, hypotheses, actions, and retrieved runbook or incident evidence.
 
@@ -153,7 +156,7 @@ PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents
 bash scripts/validate_terraform.sh
 ```
 
-The pull request test workflow runs the same web, orchestrator, and MCP checks. Run **`bash scripts/validate_terraform.sh`** locally (requires Terraform installed) to mirror root and bootstrap module checks before changing infra.
+The pull request **`test.yml`** workflow runs the same web, orchestrator, MCP checks, and **`scripts/validate_terraform.sh`**. Run **`bash scripts/validate_terraform.sh`** locally (requires Terraform on `PATH`) before changing infra.
 
 You can also run the full local stack with Docker:
 
@@ -169,7 +172,7 @@ The web container builds the Next.js app and serves it with `next start`. Supply
 
 The current implementation is a concise capstone core: deterministic six-agent orchestration (monitor through reporter), lexical RAG (default), optional AWS S3 Vectors RAG with pluggable embeddings, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics (including retrieval mean reciprocal rank and verifier pass rate), and AWS deployment scaffolding. Retrieval lives in `services/orchestrator/src/fleet_health_orchestrator/rag.py` with helpers in `embeddings.py`.
 
-Next capstone-depth steps: optional LLM-backed fields beyond summary refine, wiring production embeddings consistently for S3 Vectors index and query, and executing production deployment (Terraform remote state, OIDC, and optional **`deploy-dev`** GitHub workflow `terraform plan` when **`AWS_ROLE_ARN`** is set).
+AWS deploy: pushes to **`develop`**, **`staging`**, and **`main`** run **[`.github/workflows/deploy-aws.yml`](.github/workflows/deploy-aws.yml)** (OIDC + **S3 remote state** + ECR build/push + Terraform). Configure GitHub Environments **`dev`**, **`test`**, **`prod`** and follow [docs/aws-deployment-plan.md](docs/aws-deployment-plan.md) and [docs/terraform-bootstrap.md](docs/terraform-bootstrap.md). For S3 Vectors and embeddings, keep **`FLEET_EMBEDDING_PROVIDER`** aligned; optional OpenAI flags are documented under **Optional OpenAI assist** above.
 
 ## Git and history
 

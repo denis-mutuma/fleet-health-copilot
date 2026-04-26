@@ -19,7 +19,7 @@ Not implemented yet:
 
 - Terraform remote state backend.
 - Managed database.
-- AWS S3 Vectors integration.
+- End-to-end S3 Vectors lifecycle in AWS: the orchestrator can call `query_vectors` when `FLEET_RETRIEVAL_BACKEND=s3vectors` and bucket/index or index ARN are set, but Terraform does not yet provision the vector bucket, wire embedding inference, or upsert corpus vectors from the app.
 
 ## Environment Model
 
@@ -152,7 +152,7 @@ Add cloud resources in this order:
 4. **Compute**: ECS Fargate cluster, web load balancer, private orchestrator discovery, and task definitions. Current Terraform includes an opt-in scaffold.
 5. **Secrets**: Clerk keys and app configuration through Secrets Manager placeholders. Current Terraform creates secret containers but leaves values to be populated outside Terraform.
 6. **Data**: encrypted EFS for MVP SQLite durability now; managed Postgres or DynamoDB remains the recommended production-grade next step.
-7. **Retrieval**: AWS S3 Vectors backend behind `RetrievalBackend`.
+7. **Retrieval**: Configure orchestrator env for S3 Vectors (`FLEET_RETRIEVAL_BACKEND`, bucket/index or `FLEET_S3_VECTORS_INDEX_ARN`, IAM, embedding model); index population remains outside this repo until you add an ingestion job.
 8. **Observability**: logs, metrics, and alarms for demo reliability.
 
 ## Recommended Compute Choice
@@ -222,9 +222,8 @@ Web:
 Orchestrator:
 
 - `FLEET_DB_PATH` for local SQLite mode.
-- `FLEET_RETRIEVAL_BACKEND`
-- `FLEET_S3_VECTORS_BUCKET`
-- `FLEET_S3_VECTORS_INDEX`
+- `FLEET_RETRIEVAL_BACKEND` (`lexical` default, or `s3vectors`)
+- For `s3vectors`: `FLEET_S3_VECTORS_BUCKET` and `FLEET_S3_VECTORS_INDEX`, or `FLEET_S3_VECTORS_INDEX_ARN`, plus optional `FLEET_S3_VECTORS_EMBEDDING_DIM` and `FLEET_S3_VECTORS_QUERY_VECTOR_JSON` (see README)
 
 Terraform outputs when ECS is enabled:
 
@@ -239,7 +238,7 @@ Terraform outputs when ECS is enabled:
 
 - Whether the deployed persistence layer should be managed Postgres, DynamoDB, or a simpler S3-backed MVP store.
 - Whether to deploy MCP servers as independent services or keep them as local/demo tool servers.
-- Whether S3 Vectors should be implemented before or after the first ECS deployment.
+- Whether to wire S3 Vectors env and IAM before or after the first ECS deployment (query path exists in code; indexing and embeddings are separate decisions).
 
 ## Near-Term Next Step
 

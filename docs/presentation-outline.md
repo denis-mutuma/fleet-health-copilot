@@ -144,8 +144,8 @@ Talk track:
 
 ## Slide 12: Next Steps
 
-1. Wire a production embedding model for S3 Vectors query vectors.
-2. Add diagnosis and verifier agents.
+1. Wire a production embedding model for S3 Vectors query vectors (and optional vector indexing).
+2. Deepen diagnosis and verifier evidence grounding, or add LLM-backed variants.
 3. Expand evaluation data and retrieval relevance metrics.
 4. Deploy through Terraform and GitHub Actions.
 5. Add a final polished UI pass.

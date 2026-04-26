@@ -136,7 +136,7 @@ Known remaining gaps:
 | Working demo | Implemented with local and Docker paths |
 | Backend orchestration API | Implemented with FastAPI |
 | RAG knowledge base | Implemented with seed docs and lexical retrieval |
-| At least 3 agents | Implemented: monitor, retriever, reporter |
+| At least 3 agents | Implemented: monitor, retriever, diagnosis, planner, verifier, and reporter (deterministic pipeline) |
 | MCP tool access | Implemented: telemetry, retrieval, incidents |
 | Evaluation metrics | Implemented with confusion-matrix output |
 | Architecture documentation | Implemented |
@@ -146,8 +146,8 @@ Known remaining gaps:
 
 Recommended next implementation steps:
 
-1. Wire a production embedding model for S3 Vectors queries so ANN results align with ingested vectors.
-2. Add a diagnosis or verifier agent that uses retrieved evidence more deeply.
+1. Wire a production embedding model for S3 Vectors queries so ANN results align with ingested vectors, and optionally add a vector upsert path from RAG documents.
+2. Deepen diagnosis or verifier grounding against retrieved evidence, or introduce optional LLM-backed variants.
 3. Add a deployed environment using Terraform and GitHub Actions.
 4. Expand the evaluation dataset beyond the current small seed set.
 5. Add a presentation deck using `docs/presentation-outline.md`.

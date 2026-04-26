@@ -27,12 +27,12 @@ See **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)*
 Summary:
 
 1. One-time: apply **`infra/terraform/bootstrap-state`** and record the **state bucket** and **DynamoDB lock table** name.
-2. One-time: from a privileged principal, run **root module** `terraform apply` with **`-var="github_repository=OWNER/REPO"`** so Terraform creates the **OIDC provider** and **`github_actions` IAM role** (ECR push is always inline on that role; broader **Terraform** permissions require your own policy unless you set **`github_actions_attach_administrator_access = true`** in tfvars). Copy output **`github_actions_role_arn`** into each GitHub Environment secret **`AWS_ROLE_ARN`** (or use one shared Environment if you accept the same role for all three).
+2. One-time: from a privileged principal, run **root module** `terraform apply` with **`-var="github_repository=OWNER/REPO"`** so Terraform creates the **OIDC provider** (only in the workspace where **`manage_github_oidc_provider`** is true; see [iam-github-actions.md](iam-github-actions.md)) and **`github_actions` IAM role** (ECR push is always inline on that role; broader **Terraform** permissions require your own policy unless you set **`github_actions_attach_administrator_access = true`** in tfvars). Copy output **`github_actions_role_arn`** into each GitHub Environment secret **`AWS_ROLE_ARN`** (or use one shared Environment if you accept the same role for all three).
 3. In GitHub **Settings → Environments**, create **`dev`**, **`test`**, and **`prod`**. On each environment, add secrets **`AWS_ROLE_ARN`**, **`TF_STATE_BUCKET`**, **`TF_LOCK_TABLE`**, and **`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`**. Add optional secrets **`VPC_ID`**, **`PUBLIC_SUBNET_IDS_JSON`**, **`WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL`** when you enable ECS (see workflow file).
 4. Set repository variable **`ENABLE_ECS`** to **`true`** only after the first successful deploy path (ECR exists). When true, **VPC** and **subnet** secrets must satisfy Terraform validation (`vpc_id` non-empty, at least two subnet IDs).
 5. **Branch mapping**: `develop` → environment **dev** + `env/dev.tfvars`; `staging` → **test** + `env/test.tfvars`; `main` → **prod** + `env/prod.tfvars`. **Manual re-run**: **Actions → deploy-aws → Run workflow** and pick the target environment.
 
-State keys in CI: **`fleet-health-copilot/<dev|test|prod>/terraform.tfstate`**. Local init with the same backend: **`bash scripts/terraform_remote_backend_init.sh`**.
+State keys in CI: **`fleet-health-copilot/<dev|test|prod>/terraform.tfstate`**. Local init with the same backend: set **`TF_ENV`** (or **`TF_STATE_KEY`**) and run **`bash scripts/terraform_remote_backend_init.sh`** (see [terraform-bootstrap.md](terraform-bootstrap.md)).
 
 When **`enable_ecs`** and **`enable_s3_vectors_rag`** are both true, the orchestrator ECS task receives **S3 Vectors** env vars from Terraform (see `ecs.tf`).
 

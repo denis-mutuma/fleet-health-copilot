@@ -48,7 +48,7 @@ From the repository root, **`bash scripts/validate_terraform.sh`** runs **fmt** 
 **`deploy-aws`** needs **`AWS_ROLE_ARN`** in each GitHub Environment, but that role is created by the root module when **`github_repository`** is set. Bootstrap order:
 
 1. Apply **bootstrap-state** (this directory).
-2. With **administrator credentials** (local AWS profile or CI outside this repo), run **one** root module **`terraform apply`** using remote state and **`-var="github_repository=OWNER/REPO"`** so Terraform creates the **OIDC provider** and **`github_actions`** role. By default **`github_actions_attach_administrator_access`** is **`false`**: attach a customer-managed policy to that role for state + Terraform + ECR, or set **`github_actions_attach_administrator_access = true`** in tfvars for a one-time bootstrap (see [iam-github-actions.md](iam-github-actions.md)).
+2. With **administrator credentials** (local AWS profile or CI outside this repo), run **one** root module **`terraform apply`** using remote state and **`-var="github_repository=OWNER/REPO"`** so Terraform creates the **`github_actions`** role. The **OIDC provider** is only created when **`manage_github_oidc_provider = true`** in the tfvars you use; **`env/*.tfvars`** default to **`false`** so an account that already has `token.actions.githubusercontent.com` does not hit **409 EntityAlreadyExists**. On a **greenfield** account with no GitHub OIDC provider yet, set **`manage_github_oidc_provider = true`** in **`env/dev.tfvars`** for that first apply, then set it back to **`false`**. By default **`github_actions_attach_administrator_access`** is **`false`**: attach a customer-managed policy to that role for state + Terraform + ECR, or set **`github_actions_attach_administrator_access = true`** in tfvars for a one-time bootstrap (see [iam-github-actions.md](iam-github-actions.md)).
 3. Copy **`terraform output github_actions_role_arn`** into GitHub Environment secrets **`AWS_ROLE_ARN`** for **dev**, **test**, and **prod** (or start with **dev** only).
 4. From then on, **`deploy-aws`** can run on every push without long-lived keys.
 
@@ -59,9 +59,10 @@ To point the root module at the bootstrap bucket without committing `backend.tf`
 ```bash
 export TF_STATE_BUCKET=YOUR_STATE_BUCKET
 export TF_LOCK_TABLE=YOUR_LOCK_TABLE
-export TF_STATE_KEY=fleet-health-copilot/dev/terraform.tfstate   # optional
+export TF_ENV=dev   # dev | test | prod — default key fleet-health-copilot/${TF_ENV}/terraform.tfstate
 export AWS_REGION=us-east-1
 bash scripts/terraform_remote_backend_init.sh
+# Or override explicitly: export TF_STATE_KEY=fleet-health-copilot/prod/terraform.tfstate
 ```
 
 ## CI apply (GitHub Actions)

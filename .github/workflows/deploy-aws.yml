@@ -16,7 +16,7 @@
 #   WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL — browser → API URL after you have an ALB/domain
 #
 # Repository variables:
-#   ENABLE_ECS — set "true" after first successful deploy (ECR exists) to roll out ECS.
+#   ENABLE_ECS — set true after first successful deploy (ECR exists). Accepted: true, True, TRUE, 1.
 #   AWS_REGION — optional (defaults us-east-1 in configure-aws-credentials via env).
 
 name: deploy-aws
@@ -86,6 +86,8 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       TF_STATE_KEY: fleet-health-copilot/${{ needs.select.outputs.tfvars_env }}/terraform.tfstate
       TF_ENV: ${{ needs.select.outputs.tfvars_env }}
+      # Repository variables are strings; GitHub expressions have no toLower().
+      ENABLE_ECS: ${{ (vars.ENABLE_ECS == 'true' || vars.ENABLE_ECS == 'True' || vars.ENABLE_ECS == 'TRUE' || vars.ENABLE_ECS == '1') && 'true' || 'false' }}
     permissions:
       id-token: write
       contents: read
@@ -140,11 +142,14 @@ jobs:
         run: terraform init -input=false -backend-config=backend.ci.hcl
         working-directory: infra/terraform
 
+      - name: Terraform validate
+        run: terraform validate -no-color
+        working-directory: infra/terraform
+
       - name: Terraform apply (bootstrap infra; ECS uses :latest until images are pushed)
         working-directory: infra/terraform
         env:
           GITHUB_REPO: ${{ github.repository }}
-          ENABLE_ECS: ${{ vars.ENABLE_ECS == 'true' && 'true' || 'false' }}
           VPC_ID: ${{ secrets.VPC_ID }}
           SUBNETS_JSON: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
           ORCH_URL: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
@@ -170,8 +175,14 @@ jobs:
         run: |
           set -euo pipefail
           JSON=$(terraform output -json ecr_repository_urls)
-          echo "web=$(echo "$JSON" | jq -r '.["web"]')" >> "$GITHUB_OUTPUT"
-          echo "orchestrator=$(echo "$JSON" | jq -r '.["orchestrator"]')" >> "$GITHUB_OUTPUT"
+          WEB=$(echo "$JSON" | jq -r '.["web"] // empty')
+          ORCH=$(echo "$JSON" | jq -r '.["orchestrator"] // empty')
+          if [ -z "$WEB" ] || [ -z "$ORCH" ] || [ "$WEB" = "null" ] || [ "$ORCH" = "null" ]; then
+            echo "::error::ecr_repository_urls must include non-empty web and orchestrator. Got: $JSON"
+            exit 1
+          fi
+          echo "web=$WEB" >> "$GITHUB_OUTPUT"
+          echo "orchestrator=$ORCH" >> "$GITHUB_OUTPUT"
 
       - name: Build and push web image
         uses: docker/build-push-action@v6
@@ -199,7 +210,6 @@ jobs:
         working-directory: infra/terraform
         env:
           GITHUB_REPO: ${{ github.repository }}
-          ENABLE_ECS: ${{ vars.ENABLE_ECS == 'true' && 'true' || 'false' }}
           VPC_ID: ${{ secrets.VPC_ID }}
           SUBNETS_JSON: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
           ORCH_URL: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}

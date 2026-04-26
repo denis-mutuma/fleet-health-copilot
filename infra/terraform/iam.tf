@@ -1,3 +1,17 @@
+data "aws_iam_openid_connect_provider" "github_actions_existing" {
+  count = local.github_oidc_enabled && !var.manage_github_oidc_provider ? 1 : 0
+
+  arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+}
+
+locals {
+  github_oidc_provider_arn = !local.github_oidc_enabled ? "" : (
+    var.manage_github_oidc_provider
+    ? aws_iam_openid_connect_provider.github_actions[0].arn
+    : data.aws_iam_openid_connect_provider.github_actions_existing[0].arn
+  )
+}
+
 data "aws_iam_policy_document" "github_actions_assume_role" {
   count = local.github_oidc_enabled ? 1 : 0
 
@@ -7,7 +21,7 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github_actions[0].arn]
+      identifiers = [local.github_oidc_provider_arn]
     }
 
     condition {
@@ -49,7 +63,7 @@ data "aws_iam_policy_document" "github_actions_ecr" {
 }
 
 resource "aws_iam_openid_connect_provider" "github_actions" {
-  count = local.github_oidc_enabled ? 1 : 0
+  count = local.github_oidc_enabled && var.manage_github_oidc_provider ? 1 : 0
 
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]

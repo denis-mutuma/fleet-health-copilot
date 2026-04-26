@@ -1,5 +1,14 @@
 # GitHub Actions OIDC IAM (least privilege)
 
+## One OIDC provider per AWS account
+
+The GitHub OIDC provider (`token.actions.githubusercontent.com`) is **account-wide**. Variable **`manage_github_oidc_provider`** (see [`variables.tf`](../infra/terraform/variables.tf)) controls whether this workspace **creates** that provider or **reads** it with a data source. **At most one** workspace per account should use **`true`** (typical pattern: temporarily **`true`** in **`env/dev.tfvars`** on a greenfield account for the first apply, then **`false`** everywhere; this repo defaults **`dev`** / **`test`** / **`prod`** to **`false`** so existing accounts reuse the provider). If you previously applied with **`manage_github_oidc_provider = true`** and then set **`false`**, remove the provider from that workspace’s state (it stays in AWS):
+
+```bash
+cd infra/terraform
+terraform state rm 'aws_iam_openid_connect_provider.github_actions[0]'
+```
+
 The Terraform-managed role **`${project}-${environment}-github-actions`** (when **`github_repository`** is set) always receives an **inline policy for ECR push** to the repositories this module creates.
 
 **`github_actions_attach_administrator_access`** defaults to **`false`**. With that default, **no** `AdministratorAccess` is attached; you must grant enough permissions for:

@@ -43,6 +43,12 @@ variable "github_repository" {
   default     = ""
 }
 
+variable "manage_github_oidc_provider" {
+  type        = bool
+  description = "When true (with github_repository set), create the account-level GitHub OIDC provider. Use false when it already exists (avoids 409). Only one workspace should ever apply with true per account; env/*.tfvars ship false. Greenfield: set true in one tfvars for the first apply, then false."
+  default     = true
+}
+
 variable "github_actions_attach_administrator_access" {
   type        = bool
   description = "When true, attach AWS managed AdministratorAccess to the GitHub OIDC role (convenient for first-time bootstrap; not least-privilege). Default false: attach your own policy to the role (see docs/iam-github-actions.md) or set true explicitly in tfvars."

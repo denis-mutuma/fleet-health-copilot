@@ -19,9 +19,21 @@ jobs:
         run: npm ci --workspace apps/web
       - name: Lint web
         run: npm run web:lint
+      - name: Build web
+        run: npm run web:build
       - name: Install orchestrator dependencies
         run: |
           python -m venv .venv
           .venv/bin/pip install -e "services/orchestrator[dev]"
       - name: Run orchestrator tests
         run: PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests
+      - name: Run MCP tests
+        run: |
+          PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry/tests
+          PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
+          PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+      - name: Terraform fmt and validate (no remote backend)
+        run: bash scripts/validate_terraform.sh

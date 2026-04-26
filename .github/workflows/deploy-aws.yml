@@ -156,6 +156,11 @@ jobs:
           TF_VAR_web_next_public_clerk_publishable_key: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
+          # Use TF_VAR_* for VPC/subnets so JSON lists are not broken by shell double-quotes
+          # (e.g. public_subnet_ids=["a","b"] inside -var="..." truncates at the first inner ").
+          if [ -n "${VPC_ID:-}" ]; then export TF_VAR_vpc_id="${VPC_ID}"; fi
+          if [ -n "${SUBNETS_JSON:-}" ]; then export TF_VAR_public_subnet_ids="${SUBNETS_JSON}"; fi
+          if [ -n "${ORCH_URL:-}" ]; then export TF_VAR_web_next_public_orchestrator_api_base_url="${ORCH_URL}"; fi
           EXTRA=(
             -var-file="env/${TF_ENV}.tfvars"
             -var="github_repository=${GITHUB_REPO}"
@@ -163,9 +168,6 @@ jobs:
             # Bare identifiers (e.g. latest) in -var HCL are variable refs; use quoted strings.
             -var='container_image_tags={web="latest",orchestrator="latest"}'
           )
-          if [ -n "${VPC_ID:-}" ]; then EXTRA+=( -var="vpc_id=${VPC_ID}" ); fi
-          if [ -n "${SUBNETS_JSON:-}" ]; then EXTRA+=( -var="public_subnet_ids=${SUBNETS_JSON}" ); fi
-          if [ -n "${ORCH_URL:-}" ]; then EXTRA+=( -var="web_next_public_orchestrator_api_base_url=${ORCH_URL}" ); fi
           terraform apply -auto-approve -input=false "${EXTRA[@]}"
 
       - uses: aws-actions/amazon-ecr-login@v2
@@ -217,6 +219,9 @@ jobs:
           TF_VAR_web_next_public_clerk_publishable_key: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
+          if [ -n "${VPC_ID:-}" ]; then export TF_VAR_vpc_id="${VPC_ID}"; fi
+          if [ -n "${SUBNETS_JSON:-}" ]; then export TF_VAR_public_subnet_ids="${SUBNETS_JSON}"; fi
+          if [ -n "${ORCH_URL:-}" ]; then export TF_VAR_web_next_public_orchestrator_api_base_url="${ORCH_URL}"; fi
           SHA="${{ github.sha }}"
           EXTRA=(
             -var-file="env/${TF_ENV}.tfvars"
@@ -225,7 +230,4 @@ jobs:
             # HCL map values must be quoted so Terraform never sees ${...} template syntax here.
             -var="container_image_tags={web=\"${SHA}\",orchestrator=\"${SHA}\"}"
           )
-          if [ -n "${VPC_ID:-}" ]; then EXTRA+=( -var="vpc_id=${VPC_ID}" ); fi
-          if [ -n "${SUBNETS_JSON:-}" ]; then EXTRA+=( -var="public_subnet_ids=${SUBNETS_JSON}" ); fi
-          if [ -n "${ORCH_URL:-}" ]; then EXTRA+=( -var="web_next_public_orchestrator_api_base_url=${ORCH_URL}" ); fi
           terraform apply -auto-approve -input=false "${EXTRA[@]}"

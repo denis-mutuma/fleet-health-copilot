@@ -12,12 +12,18 @@ locals {
     FLEET_S3_VECTORS_EMBEDDING_DIM = tostring(var.s3_vectors_embedding_dimension)
   } : {}
 
+  # Supports importing ECR repos one at a time (both keys are not in state yet).
+  ecr_repository_url_by_key       = { for k, repo in aws_ecr_repository.service : k => repo.repository_url }
+  ecr_import_placeholder_url      = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/__terraform_import_pending__"
+  ecr_web_repository_url          = lookup(local.ecr_repository_url_by_key, "web", local.ecr_import_placeholder_url)
+  ecr_orchestrator_repository_url = lookup(local.ecr_repository_url_by_key, "orchestrator", local.ecr_import_placeholder_url)
+
   ecs_services = {
     web = {
       cpu       = 512
       memory    = 1024
       port      = 3000
-      image     = "${aws_ecr_repository.service["web"].repository_url}:${lookup(var.container_image_tags, "web", "latest")}"
+      image     = "${local.ecr_web_repository_url}:${lookup(var.container_image_tags, "web", "latest")}"
       log_group = "/ecs/${local.name_prefix}/web"
       environment = merge(
         {
@@ -35,7 +41,7 @@ locals {
       cpu       = 512
       memory    = 1024
       port      = 8000
-      image     = "${aws_ecr_repository.service["orchestrator"].repository_url}:${lookup(var.container_image_tags, "orchestrator", "latest")}"
+      image     = "${local.ecr_orchestrator_repository_url}:${lookup(var.container_image_tags, "orchestrator", "latest")}"
       log_group = "/ecs/${local.name_prefix}/orchestrator"
       environment = merge(
         var.orchestrator_environment,

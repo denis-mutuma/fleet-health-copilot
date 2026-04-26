@@ -60,10 +60,12 @@ Set real `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` values in `a
 Optional orchestrator retrieval settings:
 
 - `FLEET_RETRIEVAL_BACKEND=lexical` keeps the local default lexical token search.
-- `FLEET_RETRIEVAL_BACKEND=s3vectors` selects the AWS S3 Vectors backend skeleton.
-- `FLEET_S3_VECTORS_BUCKET` and `FLEET_S3_VECTORS_INDEX` are required when `s3vectors` is selected.
+- `FLEET_RETRIEVAL_BACKEND=s3vectors` calls Amazon S3 Vectors `query_vectors` through boto3 (`s3vectors` client).
+- Either `FLEET_S3_VECTORS_BUCKET` and `FLEET_S3_VECTORS_INDEX`, or `FLEET_S3_VECTORS_INDEX_ARN`, is required when `s3vectors` is selected.
+- `FLEET_S3_VECTORS_EMBEDDING_DIM` defaults to `384` and must match the vector index dimension.
+- `FLEET_S3_VECTORS_QUERY_VECTOR_JSON` is optional: a JSON array of floats used as the query vector for every search (same length as the embedding dim). Use it for integration checks against a known index; otherwise the service derives a deterministic pseudo-vector from the query string for API shape only—**production** queries should use the same embedding model as ingestion.
 
-The S3 Vectors backend is intentionally opt-in and not implemented yet, so local development should keep the default `lexical` backend.
+IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or filters are returned (the backend sets `returnMetadata=true`).
 
 ## Run Locally
 
@@ -155,6 +157,6 @@ The web container builds the Next.js app and serves it with `next start`. Supply
 
 ## Current Scope
 
-The current implementation is a concise capstone core: deterministic multi-agent orchestration, lexical RAG, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics, and AWS deployment scaffolding. Retrieval uses a small backend interface in `services/orchestrator/src/fleet_health_orchestrator/rag.py`; the local default is lexical token matching, and an opt-in AWS S3 Vectors skeleton is ready for the future vector implementation.
+The current implementation is a concise capstone core: deterministic multi-agent orchestration, lexical RAG (default), optional AWS S3 Vectors RAG, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics, and AWS deployment scaffolding. Retrieval lives in `services/orchestrator/src/fleet_health_orchestrator/rag.py`.
 
-Next capstone-depth steps are a real AWS S3 Vectors retrieval backend, optional LLM-backed report generation, and production deployment execution.
+Next capstone-depth steps are optional LLM-backed report generation, wiring a real embedding model for S3 Vectors queries, and production deployment execution.

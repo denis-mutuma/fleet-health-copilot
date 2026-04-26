@@ -1,4 +1,5 @@
 import importlib
+import importlib.util
 import json
 from pathlib import Path
 
@@ -63,7 +64,7 @@ def test_retrieval_backend_factory_defaults_to_lexical() -> None:
     assert isinstance(backend, LexicalRetrievalBackend)
 
 
-def test_retrieval_backend_factory_builds_s3vectors_skeleton() -> None:
+def test_retrieval_backend_factory_builds_s3vectors_with_bucket_and_index() -> None:
     backend = build_retrieval_backend(
         backend_name="s3vectors",
         s3_vectors_bucket="fleet-health-vectors",
@@ -73,12 +74,137 @@ def test_retrieval_backend_factory_builds_s3vectors_skeleton() -> None:
     assert isinstance(backend, S3VectorsRetrievalBackend)
     assert backend.bucket_name == "fleet-health-vectors"
     assert backend.index_name == "runbooks"
-    with pytest.raises(NotImplementedError):
-        backend.search(query="battery thermal", documents=[], limit=3)
+    assert backend.index_arn is None
+
+
+def test_retrieval_backend_factory_accepts_index_arn_only() -> None:
+    arn = "arn:aws:s3vectors:us-east-1:123456789012:index/runbooks"
+    backend = build_retrieval_backend(
+        backend_name="s3vectors",
+        s3_vectors_index_arn=arn
+    )
+
+    assert isinstance(backend, S3VectorsRetrievalBackend)
+    assert backend.index_arn == arn
+    assert backend.bucket_name == ""
+    assert backend.index_name == ""
+
+
+def test_retrieval_backend_factory_rejects_fixed_vector_wrong_dim() -> None:
+    with pytest.raises(ValueError, match="length"):
+        build_retrieval_backend(
+            backend_name="s3vectors",
+            s3_vectors_bucket="b",
+            s3_vectors_index="i",
+            s3_vectors_embedding_dimension=2,
+            s3_vectors_query_vector_json="[1.0]"
+        )
+
+
+def test_s3_vectors_backend_queries_and_maps_hits() -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeClient:
+        def query_vectors(self, **kwargs: object) -> dict[str, object]:
+            calls.append(kwargs)
+            return {
+                "vectors": [
+                    {
+                        "key": "k1",
+                        "distance": 0.25,
+                        "metadata": {
+                            "document_id": "doc_1",
+                            "title": "From Meta",
+                            "source": "runbook",
+                            "excerpt": "meta excerpt"
+                        }
+                    }
+                ],
+                "distanceMetric": "cosine"
+            }
+
+    backend = S3VectorsRetrievalBackend(
+        "bucket",
+        "index",
+        embedding_dimension=8,
+        client=FakeClient()
+    )
+    documents = [
+        {
+            "document_id": "doc_1",
+            "title": "Corpus Title",
+            "source": "incident",
+            "content": "fallback body text for excerpt"
+        }
+    ]
+    hits = backend.search("motor fault", documents=documents, limit=3)
+
+    assert calls[0]["vectorBucketName"] == "bucket"
+    assert calls[0]["indexName"] == "index"
+    assert calls[0]["topK"] == 3
+    assert len(calls[0]["queryVector"]["float32"]) == 8
+
+    assert len(hits) == 1
+    assert hits[0].document_id == "doc_1"
+    assert hits[0].title == "From Meta"
+    assert hits[0].excerpt == "meta excerpt"
+    assert hits[0].score == pytest.approx(0.75)
+
+
+def test_s3_vectors_backend_fills_fields_from_corpus_when_metadata_sparse() -> None:
+    class FakeClient:
+        def query_vectors(self, **kwargs: object) -> dict[str, object]:
+            return {
+                "vectors": [{"key": "doc_2", "distance": 1.0, "metadata": {}}],
+                "distanceMetric": "euclidean"
+            }
+
+    backend = S3VectorsRetrievalBackend(
+        "b",
+        "i",
+        embedding_dimension=4,
+        client=FakeClient()
+    )
+    documents = [
+        {
+            "document_id": "doc_2",
+            "title": "Corpus Only",
+            "source": "runbook",
+            "content": "alpha beta gamma delta epsilon"
+        }
+    ]
+    hits = backend.search("q", documents=documents, limit=5)
+
+    assert hits[0].document_id == "doc_2"
+    assert hits[0].title == "Corpus Only"
+    assert hits[0].source == "runbook"
+    assert hits[0].excerpt == "alpha beta gamma delta epsilon"[:240]
+
+
+def test_s3_vectors_backend_prefers_index_arn_in_request() -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeClient:
+        def query_vectors(self, **kwargs: object) -> dict[str, object]:
+            calls.append(kwargs)
+            return {"vectors": [], "distanceMetric": "cosine"}
+
+    arn = "arn:aws:s3vectors:us-east-1:123456789012:index/runbooks"
+    backend = S3VectorsRetrievalBackend(
+        "",
+        "",
+        index_arn=arn,
+        embedding_dimension=4,
+        client=FakeClient()
+    )
+    backend.search("x", documents=[], limit=2)
+
+    assert calls[0]["indexArn"] == arn
+    assert "vectorBucketName" not in calls[0]
 
 
 def test_retrieval_backend_factory_requires_s3vectors_config() -> None:
-    with pytest.raises(ValueError, match="FLEET_S3_VECTORS_BUCKET"):
+    with pytest.raises(ValueError, match="FLEET_S3_VECTORS"):
         build_retrieval_backend(backend_name="s3vectors")
 
 

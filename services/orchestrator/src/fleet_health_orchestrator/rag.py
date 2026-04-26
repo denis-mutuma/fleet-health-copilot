@@ -1,6 +1,11 @@
+import hashlib
+import json
 from collections import Counter
 from re import findall
-from typing import Protocol
+from typing import Any, Protocol
+
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 from fleet_health_orchestrator.models import RetrievalHit
 
@@ -49,11 +54,26 @@ class LexicalRetrievalBackend:
 
 
 class S3VectorsRetrievalBackend:
+    """RAG retrieval via Amazon S3 Vectors ``query_vectors`` (boto3 ``s3vectors`` client)."""
+
     name = "s3vectors"
 
-    def __init__(self, bucket_name: str, index_name: str) -> None:
+    def __init__(
+        self,
+        bucket_name: str,
+        index_name: str,
+        *,
+        index_arn: str | None = None,
+        embedding_dimension: int = 384,
+        fixed_query_vector: list[float] | None = None,
+        client: Any | None = None
+    ) -> None:
         self.bucket_name = bucket_name
         self.index_name = index_name
+        self.index_arn = (index_arn or "").strip() or None
+        self.embedding_dimension = embedding_dimension
+        self._fixed_query_vector = fixed_query_vector
+        self._client = client
 
     def search(
         self,
@@ -61,16 +81,83 @@ class S3VectorsRetrievalBackend:
         documents: list[dict[str, object]],
         limit: int = 5
     ) -> list[RetrievalHit]:
-        raise NotImplementedError(
-            "S3 Vectors retrieval is configured but not implemented yet. "
-            "Use FLEET_RETRIEVAL_BACKEND=lexical for local development."
+        if limit <= 0:
+            return []
+
+        lookup = _document_lookup(documents)
+        vector = _resolve_query_vector(
+            query=query,
+            dimension=self.embedding_dimension,
+            fixed=self._fixed_query_vector
         )
+
+        params: dict[str, Any] = {
+            "topK": limit,
+            "queryVector": {"float32": vector},
+            "returnMetadata": True,
+            "returnDistance": True
+        }
+        if self.index_arn:
+            params["indexArn"] = self.index_arn
+        else:
+            params["vectorBucketName"] = self.bucket_name
+            params["indexName"] = self.index_name
+
+        client = self._client if self._client is not None else boto3.client("s3vectors")
+        try:
+            response = client.query_vectors(**params)
+        except (BotoCoreError, ClientError) as exc:
+            raise RuntimeError(
+                "S3 Vectors query failed. Check credentials, IAM (s3vectors:QueryVectors "
+                "and s3vectors:GetVectors when returnMetadata is true), bucket/index or ARN, "
+                "and that FLEET_S3_VECTORS_EMBEDDING_DIM matches the index dimension."
+            ) from exc
+
+        vectors = response.get("vectors") or []
+        distance_metric = response.get("distanceMetric") or ""
+
+        hits: list[RetrievalHit] = []
+        for row in vectors:
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key") or "")
+            meta_raw = row.get("metadata")
+            meta: dict[str, Any] = meta_raw if isinstance(meta_raw, dict) else {}
+
+            doc_id = str(meta.get("document_id") or meta.get("documentId") or key or "")
+            if not doc_id:
+                continue
+
+            corpus = lookup.get(doc_id, {})
+            title = str(meta.get("title") or corpus.get("title") or doc_id)
+            source = str(meta.get("source") or corpus.get("source") or "manual")
+            excerpt_src = meta.get("excerpt") or corpus.get("content") or ""
+            excerpt = str(excerpt_src)[:240]
+
+            distance = row.get("distance")
+            score = _distance_to_score(distance, distance_metric)
+
+            hits.append(
+                RetrievalHit(
+                    document_id=doc_id,
+                    source=source,
+                    title=title,
+                    score=score,
+                    excerpt=excerpt
+                )
+            )
+
+        hits.sort(key=lambda h: h.score, reverse=True)
+        return hits[:limit]
 
 
 def build_retrieval_backend(
     backend_name: str | None = None,
     s3_vectors_bucket: str | None = None,
-    s3_vectors_index: str | None = None
+    s3_vectors_index: str | None = None,
+    s3_vectors_index_arn: str | None = None,
+    s3_vectors_embedding_dimension: int | None = None,
+    s3_vectors_query_vector_json: str | None = None
 ) -> RetrievalBackend:
     normalized_name = (backend_name or "lexical").strip().lower()
 
@@ -78,14 +165,29 @@ def build_retrieval_backend(
         return LexicalRetrievalBackend()
 
     if normalized_name == "s3vectors":
-        if not s3_vectors_bucket or not s3_vectors_index:
+        bucket = (s3_vectors_bucket or "").strip()
+        index = (s3_vectors_index or "").strip()
+        arn = (s3_vectors_index_arn or "").strip()
+        has_pair = bool(bucket and index)
+        has_arn = bool(arn)
+        if not has_pair and not has_arn:
             raise ValueError(
-                "FLEET_S3_VECTORS_BUCKET and FLEET_S3_VECTORS_INDEX are required "
-                "when FLEET_RETRIEVAL_BACKEND=s3vectors."
+                "For FLEET_RETRIEVAL_BACKEND=s3vectors, set FLEET_S3_VECTORS_BUCKET and "
+                "FLEET_S3_VECTORS_INDEX, or set FLEET_S3_VECTORS_INDEX_ARN."
             )
+
+        dimension = int(s3_vectors_embedding_dimension or 384)
+        fixed_vec = _parse_fixed_query_vector_json(
+            s3_vectors_query_vector_json,
+            expected_dim=dimension
+        )
+
         return S3VectorsRetrievalBackend(
-            bucket_name=s3_vectors_bucket,
-            index_name=s3_vectors_index
+            bucket_name=bucket,
+            index_name=index,
+            index_arn=arn or None,
+            embedding_dimension=dimension,
+            fixed_query_vector=fixed_vec
         )
 
     raise ValueError(
@@ -96,6 +198,82 @@ def build_retrieval_backend(
 
 def _tokenize(text: str) -> list[str]:
     return [token.lower() for token in findall(r"[a-zA-Z0-9_]+", text)]
+
+
+def _document_lookup(documents: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    out: dict[str, dict[str, object]] = {}
+    for document in documents:
+        doc_id = str(document.get("document_id", ""))
+        if doc_id:
+            out[doc_id] = document
+    return out
+
+
+def _deterministic_query_vector(query: str, dimension: int) -> list[float]:
+    """Stable pseudo-embedding for demos when no real embedding model is wired.
+
+    Vectors in the S3 index must be produced with the same model and dimension as
+    production queries; this helper only satisfies the API shape for integration
+    tests and experiments. Prefer real embeddings for meaningful ANN results.
+    """
+    if dimension <= 0:
+        raise ValueError("embedding dimension must be positive")
+
+    digest = hashlib.sha256(query.encode("utf-8")).digest()
+    values: list[float] = []
+    block = digest
+    while len(values) < dimension:
+        for i in range(0, len(block), 4):
+            if len(values) >= dimension:
+                break
+            chunk = block[i : i + 4].ljust(4, b"\x00")
+            u = int.from_bytes(chunk, "big", signed=False) / float(2**32)
+            values.append(u * 2.0 - 1.0)
+        block = hashlib.sha256(block).digest()
+    return values[:dimension]
+
+
+def _parse_fixed_query_vector_json(
+    raw: str | None,
+    *,
+    expected_dim: int
+) -> list[float] | None:
+    if raw is None or not str(raw).strip():
+        return None
+    parsed = json.loads(raw)
+    if not isinstance(parsed, list):
+        raise ValueError("FLEET_S3_VECTORS_QUERY_VECTOR_JSON must be a JSON array of numbers.")
+    vector = [float(x) for x in parsed]
+    if len(vector) != expected_dim:
+        raise ValueError(
+            f"FLEET_S3_VECTORS_QUERY_VECTOR_JSON length {len(vector)} does not match "
+            f"FLEET_S3_VECTORS_EMBEDDING_DIM ({expected_dim})."
+        )
+    return vector
+
+
+def _resolve_query_vector(
+    query: str,
+    *,
+    dimension: int,
+    fixed: list[float] | None
+) -> list[float]:
+    if fixed is not None:
+        return fixed
+    return _deterministic_query_vector(query, dimension)
+
+
+def _distance_to_score(distance: object, distance_metric: str) -> float:
+    if distance is None:
+        return 0.0
+    try:
+        d = float(distance)
+    except (TypeError, ValueError):
+        return 0.0
+    metric = (distance_metric or "").lower()
+    if metric == "cosine":
+        return max(0.0, 1.0 - d)
+    return 1.0 / (1.0 + max(0.0, d))
 
 
 def rank_documents(

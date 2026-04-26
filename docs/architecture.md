@@ -78,8 +78,8 @@ Current agents are intentionally simple and deterministic:
 Retrieval is behind a small backend interface:
 
 - `LexicalRetrievalBackend` is the local default and ranks documents by token overlap.
-- `S3VectorsRetrievalBackend` is an opt-in skeleton for future AWS S3 Vectors integration.
-- `FLEET_RETRIEVAL_BACKEND=lexical` keeps local development dependency-light.
+- `S3VectorsRetrievalBackend` is opt-in and calls AWS S3 Vectors `query_vectors` (boto3 `s3vectors` client), mapping vector metadata plus the SQLite-backed document list into `RetrievalHit` rows.
+- `FLEET_RETRIEVAL_BACKEND=lexical` keeps local development dependency-light; set `FLEET_RETRIEVAL_BACKEND=s3vectors` with bucket/index or index ARN when running against AWS.
 
 ## MCP Tool Layer
 

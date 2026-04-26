@@ -61,7 +61,7 @@ Talk track:
 
 - Retrieval uses a backend interface.
 - Local default is lexical ranking over seed runbooks and incident history.
-- AWS S3 Vectors is prepared as an opt-in future backend.
+- AWS S3 Vectors is supported as an opt-in retrieval backend behind the same interface as lexical search.
 - Reports avoid synthetic fallback evidence and only show retrieved IDs.
 
 ## Slide 7: MCP Tool Layer
@@ -132,7 +132,7 @@ Talk track:
 ## Slide 11: Current Limitations
 
 - Lexical retrieval is the current local baseline.
-- S3 Vectors backend is a skeleton.
+- S3 Vectors backend calls `query_vectors`; wire real embeddings for meaningful ANN in production.
 - Reporter is deterministic, not LLM-generated.
 - Dataset is small.
 - Terraform is not yet wired to a full deployed environment.
@@ -144,7 +144,7 @@ Talk track:
 
 ## Slide 12: Next Steps
 
-1. Implement AWS S3 Vectors retrieval.
+1. Wire a production embedding model for S3 Vectors query vectors.
 2. Add diagnosis and verifier agents.
 3. Expand evaluation data and retrieval relevance metrics.
 4. Deploy through Terraform and GitHub Actions.

@@ -68,7 +68,7 @@ This keeps responsibilities separated while leaving room for future LLM-backed d
 Retrieval uses a backend interface:
 
 - `LexicalRetrievalBackend` is the local default.
-- `S3VectorsRetrievalBackend` is an opt-in skeleton for future AWS S3 Vectors work.
+- `S3VectorsRetrievalBackend` is opt-in and implements `query_vectors` against Amazon S3 Vectors, with lexical fallback as the default for laptop demos.
 
 This split keeps the MVP runnable without cloud dependencies while making the storage/retrieval boundary explicit.
 
@@ -124,7 +124,7 @@ Completed hardening:
 
 Known remaining gaps:
 
-- The AWS S3 Vectors backend is a skeleton, not a working vector integration.
+- S3 Vectors queries use a deterministic pseudo-embedding unless you set `FLEET_S3_VECTORS_QUERY_VECTOR_JSON` or extend the service with your embedding model, so ANN quality depends on matching production embeddings at index time.
 - Terraform is present but not yet connected to an end-to-end deployment.
 - The agents are deterministic and not yet LLM-generated.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
@@ -140,13 +140,13 @@ Known remaining gaps:
 | MCP tool access | Implemented: telemetry, retrieval, incidents |
 | Evaluation metrics | Implemented with confusion-matrix output |
 | Architecture documentation | Implemented |
-| Cloud deployment story | Partially prepared through Docker, Terraform, and AWS retrieval skeleton |
+| Cloud deployment story | Partially prepared through Docker, Terraform, and optional S3 Vectors retrieval |
 
 ## Next Steps
 
 Recommended next implementation steps:
 
-1. Implement the AWS S3 Vectors backend behind the existing retrieval interface.
+1. Wire a production embedding model for S3 Vectors queries so ANN results align with ingested vectors.
 2. Add a diagnosis or verifier agent that uses retrieved evidence more deeply.
 3. Add a deployed environment using Terraform and GitHub Actions.
 4. Expand the evaluation dataset beyond the current small seed set.

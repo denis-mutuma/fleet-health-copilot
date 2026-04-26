@@ -29,10 +29,19 @@ DEFAULT_DB_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "fleet_health.db"
 )
 repository = FleetRepository(Path(os.getenv("FLEET_DB_PATH", str(DEFAULT_DB_PATH))))
+_embedding_dim_raw = os.getenv("FLEET_S3_VECTORS_EMBEDDING_DIM")
+_embedding_dim = (
+    int(_embedding_dim_raw.strip())
+    if _embedding_dim_raw and _embedding_dim_raw.strip()
+    else None
+)
 retrieval_backend = build_retrieval_backend(
     backend_name=os.getenv("FLEET_RETRIEVAL_BACKEND"),
     s3_vectors_bucket=os.getenv("FLEET_S3_VECTORS_BUCKET"),
-    s3_vectors_index=os.getenv("FLEET_S3_VECTORS_INDEX")
+    s3_vectors_index=os.getenv("FLEET_S3_VECTORS_INDEX"),
+    s3_vectors_index_arn=os.getenv("FLEET_S3_VECTORS_INDEX_ARN"),
+    s3_vectors_embedding_dimension=_embedding_dim,
+    s3_vectors_query_vector_json=os.getenv("FLEET_S3_VECTORS_QUERY_VECTOR_JSON")
 )
 orchestrator = AgentOrchestrator(
     monitor=MonitorAgent(),

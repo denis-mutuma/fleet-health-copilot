@@ -2,6 +2,8 @@
 
 This document defines the safe AWS deployment path for Fleet Health Copilot. It keeps the current repository deployable locally while preparing a clear dev/test/prod cloud progression.
 
+**Step-by-step checklist (operators):** [github-actions-aws-deploy.md](github-actions-aws-deploy.md)
+
 ## Current State
 
 Implemented:

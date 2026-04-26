@@ -33,6 +33,7 @@ More detail:
 - [Technical report](docs/technical-report.md)
 - [Presentation outline](docs/presentation-outline.md)
 - [AWS deployment plan](docs/aws-deployment-plan.md)
+- [GitHub Actions → AWS step-by-step](docs/github-actions-aws-deploy.md)
 
 ## Local Setup
 
@@ -154,9 +155,10 @@ PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry
 PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
 PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests
 bash scripts/validate_terraform.sh
+bash scripts/verify_github_actions_deploy_prereqs.sh
 ```
 
-The pull request **`test.yml`** workflow runs the same web, orchestrator, MCP checks, and **`scripts/validate_terraform.sh`**. Run **`bash scripts/validate_terraform.sh`** locally (requires Terraform on `PATH`) before changing infra.
+The pull request **`test.yml`** workflow runs the same web, orchestrator, MCP checks, and **`scripts/validate_terraform.sh`**. Run **`bash scripts/validate_terraform.sh`** locally (requires Terraform on `PATH`) before changing infra. Before a first AWS / GitHub Actions deploy, run **`bash scripts/verify_github_actions_deploy_prereqs.sh`** (Terraform validate plus optional AWS identity check).
 
 You can also run the full local stack with Docker:
 

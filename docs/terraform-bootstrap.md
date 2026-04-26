@@ -39,7 +39,7 @@ In the root module, set **`enable_s3_vectors_rag = true`** (and optional **`s3_v
 
 ## Automation
 
-Continuous deploy is **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)**: pushes to **`develop`**, **`staging`**, and **`main`** run **`terraform init`** with the **S3 remote backend**, **`terraform apply`**, Docker **build/push** to ECR, then **`terraform apply`** again to pin image tags to the commit SHA. See [aws-deployment-plan.md](aws-deployment-plan.md).
+Continuous deploy is **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)**: pushes to **`develop`**, **`staging`**, and **`main`** run **`terraform init`** with the **S3 remote backend**, **`terraform apply`**, Docker **build/push** to ECR, then **`terraform apply`** again to pin image tags to the commit SHA. See [aws-deployment-plan.md](aws-deployment-plan.md) and the operator checklist [github-actions-aws-deploy.md](github-actions-aws-deploy.md).
 
 From the repository root, **`bash scripts/validate_terraform.sh`** runs **fmt** / **init `-backend=false`** / **validate** for the root module and `bootstrap-state` (no AWS credentials; used locally and can be mirrored in CI for PRs).
 

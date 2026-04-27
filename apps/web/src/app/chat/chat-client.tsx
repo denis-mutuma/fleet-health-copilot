@@ -15,6 +15,9 @@ interface IncidentItem {
   confidence_score?: number;
 }
 
+type ToolCall = NonNullable<ChatMessage["tool_calls"]>[number];
+type TraceSpan = NonNullable<ChatMessage["trace_spans"]>[number];
+
 const QUICK_ACTIONS = [
   { label: "List incidents", prompt: "/list incidents" },
   { label: "Run simulation", prompt: "/simulate" },
@@ -247,6 +250,8 @@ function MessageCard({
           ))}
         </div>
       ) : null}
+
+      {message.role === "assistant" ? <TraceDetails message={message} /> : null}
     </article>
   );
 }
@@ -291,6 +296,77 @@ function sessionLastUpdated(session: ChatSession): string {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function prettifyToolName(name: string): string {
+  return name.replaceAll("_", " ");
+}
+
+function TraceDetails({ message }: { message: ChatMessage }) {
+  const toolCalls = message.tool_calls ?? [];
+  const traceSpans = message.trace_spans ?? [];
+  const showMeta = toolCalls.length > 0 || traceSpans.length > 0 || message.llm_cost_usd != null;
+
+  if (!showMeta) {
+    return null;
+  }
+
+  return (
+    <details className="chat-trace-panel">
+      <summary>
+        <span>Execution details</span>
+        <span className="muted">
+          {toolCalls.length} tool call{toolCalls.length === 1 ? "" : "s"}
+          {traceSpans.length > 0 ? ` · ${traceSpans.length} spans` : ""}
+        </span>
+      </summary>
+
+      {message.llm_cost_usd != null ? (
+        <div className="chat-trace-block">
+          <p className="chat-action-label">Model cost</p>
+          <p className="chat-trace-inline">${message.llm_cost_usd.toFixed(6)} USD</p>
+        </div>
+      ) : null}
+
+      {toolCalls.length > 0 ? (
+        <div className="chat-trace-block">
+          <p className="chat-action-label">Tool calls</p>
+          <ul className="chat-trace-list">
+            {toolCalls.map((toolCall: ToolCall, index: number) => (
+              <li key={`${message.message_id}-tool-${index}`}>
+                <div className="chat-trace-row">
+                  <strong>{prettifyToolName(toolCall.tool_name)}</strong>
+                  <span className="score-pill">{Math.round(toolCall.latency_ms)} ms</span>
+                </div>
+                {toolCall.error ? <p className="error">{toolCall.error}</p> : null}
+                <pre>{JSON.stringify(toolCall.input, null, 2)}</pre>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {traceSpans.length > 0 ? (
+        <div className="chat-trace-block">
+          <p className="chat-action-label">Trace spans</p>
+          <ul className="chat-trace-list">
+            {traceSpans.map((traceSpan: TraceSpan, index: number) => (
+              <li key={`${message.message_id}-span-${index}`}>
+                <div className="chat-trace-row">
+                  <strong>{traceSpan.span_name}</strong>
+                  <span className={`status-badge status-${traceSpan.status === "error" ? "open" : "resolved"}`}>
+                    {traceSpan.status}
+                  </span>
+                </div>
+                <p className="chat-trace-inline">{Math.round(traceSpan.latency_ms)} ms</p>
+                {traceSpan.error ? <p className="error">{traceSpan.error}</p> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </details>
+  );
 }
 
 export default function ChatClient() {

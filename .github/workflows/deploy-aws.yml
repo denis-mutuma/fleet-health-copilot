@@ -158,9 +158,38 @@ jobs:
           set -euo pipefail
           cluster=$(terraform -chdir=infra/terraform output -raw ecs_cluster_name)
           echo "Waiting for ECS services to stabilize on cluster: ${cluster}"
-          aws ecs wait services-stable \
+          services=(web orchestrator)
+
+          for i in $(seq 1 45); do
+            stable_count=$(aws ecs describe-services \
+              --cluster "${cluster}" \
+              --services "${services[@]}" \
+              --query 'length(services[?runningCount==desiredCount && length(deployments)==`1` && status==`ACTIVE`])' \
+              --output text)
+
+            echo "ECS stabilization check ${i}/45: ${stable_count}/${#services[@]} services stable"
+
+            aws ecs describe-services \
+              --cluster "${cluster}" \
+              --services "${services[@]}" \
+              --query 'services[].{service:serviceName,desired:desiredCount,running:runningCount,pending:pendingCount,rollout:deployments[?status==`PRIMARY`]|[0].rolloutState,reason:deployments[?status==`PRIMARY`]|[0].rolloutStateReason}' \
+              --output table
+
+            if [ "${stable_count}" = "${#services[@]}" ]; then
+              echo "ECS services are stable."
+              exit 0
+            fi
+
+            sleep 20
+          done
+
+          echo "ECS services failed to stabilize within the expected window." >&2
+          aws ecs describe-services \
             --cluster "${cluster}" \
-            --services web orchestrator
+            --services "${services[@]}" \
+            --query 'services[].events[:10].[createdAt,message]' \
+            --output table || true
+          exit 1
 
       - name: Post-deploy ALB health check
         run: |

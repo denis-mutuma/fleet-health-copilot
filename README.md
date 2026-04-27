@@ -113,6 +113,7 @@ Production AWS shape:
 - [Architecture deep-dive](docs/architecture.md)
 - [Demo walkthrough](docs/demo-runbook.md)
 - [API reference](docs/API.md)
+- [Release notes](docs/release-notes.md)
 - [Technical report](docs/technical-report.md)
 - [RAG with S3 Vectors (optional)](docs/s3-vectors-operations.md)
 

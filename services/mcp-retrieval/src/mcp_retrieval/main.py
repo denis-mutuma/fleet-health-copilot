@@ -1,4 +1,9 @@
-"""MCP tools for retrieval and RAG context lookup."""
+"""MCP tools for retrieval and RAG context lookup.
+
+This module exposes a small MCP server that proxies retrieval requests to the
+orchestrator RAG API. The tool contract intentionally returns a stable,
+JSON-serializable shape consumed by downstream agent steps.
+"""
 
 import os
 from typing import Any
@@ -6,28 +11,54 @@ from typing import Any
 import httpx
 
 DEFAULT_ORCHESTRATOR_URL = "http://127.0.0.1:8000"
+RAG_SEARCH_PATH = "/v1/rag/search"
+REQUEST_TIMEOUT_SECONDS = 10.0
 
 
 def _orchestrator_base_url() -> str:
-    """Resolve orchestrator base URL from env with a safe local default."""
+    """Resolve orchestrator base URL from env with a safe local default.
+
+    Environment variable:
+    - ORCHESTRATOR_API_BASE_URL: Optional absolute URL for the orchestrator API.
+    """
     return os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
 
 
 def retrieve_supporting_context(
     query: str, base_url: str = DEFAULT_ORCHESTRATOR_URL, limit: int = 5
 ) -> dict[str, Any]:
-    """Run retrieval against orchestrator RAG search and return normalized shape."""
+    """Query orchestrator RAG search and return a normalized retrieval payload.
+
+    Args:
+        query: Natural-language retrieval query from an upstream agent/tool.
+        base_url: Orchestrator base URL (no trailing slash required).
+        limit: Maximum number of hits requested from orchestrator.
+
+    Returns:
+        A stable object with the original ``query`` and orchestrator ``hits``.
+
+    Raises:
+        httpx.HTTPStatusError: If orchestrator returns a non-2xx response.
+        httpx.RequestError: If the request cannot be completed.
+    """
     response = httpx.get(
-        f"{base_url.rstrip('/')}/v1/rag/search",
+        f"{base_url.rstrip('/')}{RAG_SEARCH_PATH}",
         params={"query": query, "limit": limit},
-        timeout=10.0
+        timeout=REQUEST_TIMEOUT_SECONDS
     )
     response.raise_for_status()
     return {"query": query, "hits": response.json()}
 
 
 def create_mcp_server() -> Any:
-    """Create and register MCP tools for retrieval workflows."""
+    """Create and register MCP tools for retrieval workflows.
+
+    Returns:
+        FastMCP server instance with retrieval tools registered.
+
+    Raises:
+        RuntimeError: If the MCP runtime dependency is unavailable.
+    """
     try:
         from mcp.server.fastmcp import FastMCP
     except ImportError as error:
@@ -40,7 +71,11 @@ def create_mcp_server() -> Any:
 
     @server.tool()
     def search_operational_context(query: str, limit: int = 5) -> dict[str, Any]:
-        """Search runbooks and incident history through the orchestrator RAG API."""
+        """Search runbooks and incident history via the orchestrator RAG API.
+
+        The returned structure is intentionally thin and deterministic so MCP
+        callers can compose retrieval output without additional adaptation.
+        """
         return retrieve_supporting_context(
             query=query,
             base_url=_orchestrator_base_url(),

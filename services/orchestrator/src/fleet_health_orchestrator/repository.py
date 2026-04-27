@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from fleet_health_orchestrator.models import IncidentReport, TelemetryEvent
@@ -124,7 +125,7 @@ class FleetRepository:
                 event_id=row["event_id"],
                 fleet_id=row["fleet_id"],
                 device_id=row["device_id"],
-                timestamp=row["timestamp"],
+                timestamp=datetime.fromisoformat(row["timestamp"]),
                 metric=row["metric"],
                 value=row["value"],
                 threshold=row["threshold"],
@@ -211,8 +212,9 @@ class FleetRepository:
                 """,
                 (status, incident_id)
             )
+            row_count = cursor.rowcount
 
-        if cursor.rowcount == 0:
+        if row_count == 0:
             return None
 
         return self.get_incident(incident_id)

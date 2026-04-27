@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from time import perf_counter
 from uuid import uuid4
 
+from fleet_health_orchestrator.exceptions import AnomalyThresholdError
 from fleet_health_orchestrator.llm import enrich_diagnosis_hypotheses, refine_incident_summary
 from fleet_health_orchestrator.models import IncidentReport, RetrievalHit, TelemetryEvent
 from fleet_health_orchestrator.rag import LexicalRetrievalBackend, RetrievalBackend
@@ -162,8 +162,7 @@ class ReporterAgent:
             recommended_actions=plan.actions,
             evidence={
                 "matched_incidents": matched_incidents,
-                "runbooks": runbooks,
-                "generated_at": [datetime.now(UTC).isoformat()]
+                "runbooks": runbooks
             },
             confidence_score=diagnosis.confidence_score,
             agent_trace=[
@@ -194,7 +193,7 @@ class AgentOrchestrator:
     def execute(self, event: TelemetryEvent, rag_documents: list[dict[str, object]]) -> IncidentReport:
         started_at = perf_counter()
         if not self.monitor.detect_anomaly(event):
-            raise ValueError("Event does not exceed threshold.")
+            raise AnomalyThresholdError()
         retrieved_context = self.retriever.retrieve(event=event, rag_documents=rag_documents)
         diagnosis = self.diagnosis.diagnose(event=event, hits=retrieved_context)
         plan = self.planner.plan(hits=retrieved_context)

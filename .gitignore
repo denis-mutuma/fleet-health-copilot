@@ -5,10 +5,13 @@ node_modules/
 .venv/
 __pycache__/
 *.pyc
+*.pyo
 
-# Env files
+# Env files (NEVER commit secrets)
 .env
-*.env.local
+.env.local
+.env.*.local
+*.env
 
 # Terraform generated files
 infra/terraform/.terraform/
@@ -32,3 +35,4 @@ infra/terraform/backend.ci.hcl
 
 # Next.js build output
 apps/web/.next/
+

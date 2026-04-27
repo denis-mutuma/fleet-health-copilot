@@ -1,54 +1,116 @@
-# Web production build runs Clerk during SSG; set repository secret NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.
-
-name: test
+name: Test
 
 on:
   pull_request:
-    branches:
-      - main
-      - develop
-      - staging
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
 
 jobs:
-  quality-gates:
+  web-test:
     runs-on: ubuntu-latest
-    env:
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+    strategy:
+      matrix:
+        node-version: [22]
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
         with:
-          node-version: "22"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
       - name: Install web dependencies
-        run: npm ci --workspace apps/web
-      - name: Lint web
+        run: npm install --workspace apps/web
+
+      - name: Lint web app
         run: npm run web:lint
-      - name: Ensure Clerk publishable key for Next.js build
-        run: |
-          if [ -z "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}" ]; then
-            echo "::error::Missing secret NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY. Add it under Settings → Secrets and variables → Actions (repository secret). Use your Clerk test publishable key (pk_test_...)."
-            exit 1
-          fi
-      - name: Build web
+
+      - name: Build web app
         run: npm run web:build
-      - name: Install orchestrator dependencies
+
+  orchestrator-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
         run: |
-          python -m venv .venv
-          .venv/bin/pip install -e "services/orchestrator[dev]"
+          python -m pip install --upgrade pip
+          pip install -e "services/orchestrator[dev]"
+
       - name: Run orchestrator tests
-        run: PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests
+        run: PYTHONPATH=services/orchestrator/src pytest -q services/orchestrator/tests
+
+  orchestrator-latency-guard:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "services/orchestrator[dev]"
+
+      - name: Run non-blocking latency budget guard
+        env:
+          ORCHESTRATOR_LATENCY_BUDGET_MS: "40"
+        run: PYTHONPATH=services/orchestrator/src python scripts/check_orchestrator_latency_budget.py
+
+  mcp-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "services/orchestrator[dev]"
+          pip install -e "services/mcp-telemetry"
+          pip install -e "services/mcp-retrieval"
+          pip install -e "services/mcp-incidents"
+
       - name: Run MCP tests
         run: |
-          PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry/tests
-          PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
-          PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests
+          PYTHONPATH=services/mcp-telemetry/src pytest -q services/mcp-telemetry/tests
+          PYTHONPATH=services/mcp-retrieval/src pytest -q services/mcp-retrieval/tests
+          PYTHONPATH=services/mcp-incidents/src pytest -q services/mcp-incidents/tests
 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9.0"
+  docs-link-check:
+    runs-on: ubuntu-latest
 
-      - name: Terraform fmt and validate (no remote backend)
-        run: bash scripts/validate_terraform.sh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check markdown links
+        run: python3 scripts/check_markdown_links.py

@@ -1,32 +1,8 @@
-# Automatic AWS deploy on push (branch → GitHub Environment + tfvars):
-#   main    → environment "prod"  + infra/terraform/env/prod.tfvars
-#   develop → "dev"   + env/dev.tfvars
-#   staging → "test"  + env/test.tfvars
-#
-# Requires GitHub Environments (same names: dev, test, prod), each with secrets:
-#   AWS_ROLE_ARN        — IAM role ARN (OIDC). Default Terraform does NOT attach AdministratorAccess;
-#                         use github_actions_attach_administrator_access=true in tfvars for bootstrap or attach a scoped policy (docs/iam-github-actions.md).
-#   TF_STATE_BUCKET     — S3 bucket from bootstrap-state
-#   TF_LOCK_TABLE       — DynamoDB lock table from bootstrap-state
-#   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY — web Docker build (publishable key is fine in Actions secret)
-#
-# Optional secrets (when ENABLE_ECS=true repository variable):
-#   VPC_ID
-#   PUBLIC_SUBNET_IDS_JSON — JSON array string, e.g. ["subnet-aaa","subnet-bbb"]
-#   WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL — browser → API URL after you have an ALB/domain
-#
-# Repository variables:
-#   ENABLE_ECS — set true after first successful deploy (ECR exists). Accepted: true, True, TRUE, 1.
-#   AWS_REGION — optional (defaults us-east-1 in configure-aws-credentials via env).
+name: Deploy AWS
 
-name: deploy-aws
-
-on:
+"on":
   push:
-    branches:
-      - main
-      - develop
-      - staging
+    branches: [develop, main]
   workflow_dispatch:
     inputs:
       environment:
@@ -35,163 +11,145 @@ on:
         type: choice
         options:
           - dev
-          - test
           - prod
 
-concurrency:
-  group: deploy-aws-${{ github.repository }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  select:
+  select-environment:
     runs-on: ubuntu-latest
     outputs:
-      tfvars_env: ${{ steps.pick.outputs.tfvars_env }}
-      gh_environment: ${{ steps.pick.outputs.gh_environment }}
+      target_env: ${{ steps.select.outputs.target_env }}
     steps:
-      - id: pick
-        name: Map branch or dispatch to environment
+      - id: select
+        name: Select target environment
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            E="${{ github.event.inputs.environment }}"
-            echo "tfvars_env=$E" >> "$GITHUB_OUTPUT"
-            echo "gh_environment=$E" >> "$GITHUB_OUTPUT"
-            exit 0
+            TARGET="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            TARGET="dev"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TARGET="prod"
+          else
+            echo "Unsupported ref: ${{ github.ref }}" >&2
+            exit 1
           fi
-          case "${{ github.ref }}" in
-            refs/heads/main)
-              echo "tfvars_env=prod" >> "$GITHUB_OUTPUT"
-              echo "gh_environment=prod" >> "$GITHUB_OUTPUT"
-              ;;
-            refs/heads/develop)
-              echo "tfvars_env=dev" >> "$GITHUB_OUTPUT"
-              echo "gh_environment=dev" >> "$GITHUB_OUTPUT"
-              ;;
-            refs/heads/staging)
-              echo "tfvars_env=test" >> "$GITHUB_OUTPUT"
-              echo "gh_environment=test" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "::error::Branch ${{ github.ref }} is not configured for deploy-aws."
-              exit 1
-              ;;
-          esac
+
+          echo "target_env=${TARGET}" >> "$GITHUB_OUTPUT"
 
   deploy:
-    needs: select
     runs-on: ubuntu-latest
-    environment: ${{ needs.select.outputs.gh_environment }}
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-      TF_STATE_KEY: fleet-health-copilot/${{ needs.select.outputs.tfvars_env }}/terraform.tfstate
-      TF_ENV: ${{ needs.select.outputs.tfvars_env }}
-      # Repository variables are strings; GitHub expressions have no toLower().
-      ENABLE_ECS: ${{ (vars.ENABLE_ECS == 'true' || vars.ENABLE_ECS == 'True' || vars.ENABLE_ECS == 'TRUE' || vars.ENABLE_ECS == '1') && 'true' || 'false' }}
+    needs: select-environment
+    environment: ${{ needs.select-environment.outputs.target_env }}
     permissions:
       id-token: write
       contents: read
+    env:
+      TF_ENV: ${{ needs.select-environment.outputs.target_env }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require OIDC, remote state, and Clerk secrets
+      - name: Validate required environment secrets
         env:
           AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
           TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
           TF_LOCK_TABLE: ${{ secrets.TF_LOCK_TABLE }}
-          CLERK_PK: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          VPC_ID: ${{ secrets.VPC_ID }}
+          PUBLIC_SUBNET_IDS_JSON: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
         run: |
           set -euo pipefail
-          for name in AWS_ROLE_ARN TF_STATE_BUCKET TF_LOCK_TABLE CLERK_PK; do
-            eval "v=\${$name:-}"
-            if [ -z "${v}" ]; then
-              echo "::error::Missing required secret $name on GitHub Environment ${{ needs.select.outputs.gh_environment }}."
+          for name in AWS_ROLE_ARN TF_STATE_BUCKET TF_LOCK_TABLE NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY VPC_ID PUBLIC_SUBNET_IDS_JSON; do
+            eval "val=\${$name:-}"
+            if [ -z "${val}" ]; then
+              echo "Missing required environment secret: ${name}" >&2
               exit 1
             fi
           done
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: hashicorp/setup-terraform@v3
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.9.0"
+          terraform_version: 1.9.0
           terraform_wrapper: false
 
-      - name: Write S3 remote backend (required)
-        working-directory: infra/terraform
-        env:
-          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
-          TF_LOCK_TABLE: ${{ secrets.TF_LOCK_TABLE }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Create temporary backend block for CI
         run: |
-          {
-            echo "bucket         = \"${TF_STATE_BUCKET}\""
-            echo "key            = \"${TF_STATE_KEY}\""
-            echo "region         = \"${AWS_REGION}\""
-            echo "dynamodb_table = \"${TF_LOCK_TABLE}\""
-            echo "encrypt        = true"
-          } > backend.ci.hcl
+          cat > infra/terraform/backend.ci.tf <<'EOF'
+          terraform {
+            backend "s3" {}
+          }
+          EOF
 
-      - name: Terraform fmt (check)
-        run: terraform fmt -check
-        working-directory: infra/terraform
-
-      - name: Terraform init (S3 backend)
-        run: terraform init -input=false -backend-config=backend.ci.hcl
-        working-directory: infra/terraform
+      - name: Terraform init
+        run: |
+          set -euo pipefail
+          terraform -chdir=infra/terraform init -input=false \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=fleet-health-copilot/${TF_ENV}/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}" \
+            -backend-config="encrypt=true"
 
       - name: Terraform validate
-        run: terraform validate -no-color
-        working-directory: infra/terraform
+        run: terraform -chdir=infra/terraform validate -no-color
 
-      - name: Terraform apply (bootstrap infra; ECS uses :latest until images are pushed)
-        working-directory: infra/terraform
+      - name: Terraform apply (bootstrap latest tags)
         env:
-          GITHUB_REPO: ${{ github.repository }}
-          VPC_ID: ${{ secrets.VPC_ID }}
-          SUBNETS_JSON: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
-          ORCH_URL: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
-          TF_VAR_web_next_public_clerk_publishable_key: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
+          TF_VAR_public_subnet_ids: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
+          TF_VAR_web_next_public_orchestrator_api_base_url: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
         run: |
           set -euo pipefail
-          if [ "${ENABLE_ECS}" = "true" ]; then
-            if [ -z "${VPC_ID:-}" ] || [ -z "${SUBNETS_JSON:-}" ]; then
-              echo "::error::Repository variable ENABLE_ECS is true but GitHub Environment ${{ needs.select.outputs.gh_environment }} is missing VPC_ID or PUBLIC_SUBNET_IDS_JSON. Add both secrets (PUBLIC_SUBNET_IDS_JSON must be a JSON array of at least two subnet IDs), or set ENABLE_ECS to false until ready."
-              exit 1
-            fi
-          fi
-          # Use TF_VAR_* for VPC/subnets so JSON lists are not broken by shell double-quotes
-          # (e.g. public_subnet_ids=["a","b"] inside -var="..." truncates at the first inner ").
-          if [ -n "${VPC_ID:-}" ]; then export TF_VAR_vpc_id="${VPC_ID}"; fi
-          if [ -n "${SUBNETS_JSON:-}" ]; then export TF_VAR_public_subnet_ids="${SUBNETS_JSON}"; fi
-          if [ -n "${ORCH_URL:-}" ]; then export TF_VAR_web_next_public_orchestrator_api_base_url="${ORCH_URL}"; fi
-          EXTRA=(
-            -var-file="env/${TF_ENV}.tfvars"
-            -var="github_repository=${GITHUB_REPO}"
-            -var="enable_ecs=${ENABLE_ECS}"
-            # Bare identifiers (e.g. latest) in -var HCL are variable refs; use quoted strings.
+          terraform -chdir=infra/terraform apply -auto-approve -input=false \
+            -var-file="env/${TF_ENV}.tfvars" \
+            -var="github_repository=${{ github.repository }}" \
+            -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
             -var='container_image_tags={web="latest",orchestrator="latest"}'
-          )
-          terraform apply -auto-approve -input=false "${EXTRA[@]}"
 
-      - uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Resolve ECR URLs from Terraform
-        id: repos
-        working-directory: infra/terraform
+      - name: Ensure Clerk runtime secret value is set
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
         run: |
           set -euo pipefail
-          JSON=$(terraform output -json ecr_repository_urls)
-          WEB=$(echo "$JSON" | jq -r '.["web"] // empty')
-          ORCH=$(echo "$JSON" | jq -r '.["orchestrator"] // empty')
-          if [ -z "$WEB" ] || [ -z "$ORCH" ] || [ "$WEB" = "null" ] || [ "$ORCH" = "null" ]; then
-            echo "::error::ecr_repository_urls must include non-empty web and orchestrator. Got: $JSON"
+          secret_arn=$(terraform -chdir=infra/terraform output -json managed_secret_arns | jq -r '."CLERK_SECRET_KEY" // empty')
+          if [ -z "${secret_arn}" ]; then
+            echo "Unable to resolve managed secret ARN for CLERK_SECRET_KEY" >&2
             exit 1
           fi
-          echo "web=$WEB" >> "$GITHUB_OUTPUT"
-          echo "orchestrator=$ORCH" >> "$GITHUB_OUTPUT"
+
+          aws secretsmanager put-secret-value \
+            --secret-id "${secret_arn}" \
+            --secret-string "${CLERK_SECRET_KEY}" >/dev/null
+
+      - name: Resolve ECR repository URLs
+        id: ecr
+        run: |
+          set -euo pipefail
+          json=$(terraform -chdir=infra/terraform output -json ecr_repository_urls)
+          web=$(echo "${json}" | jq -r '."web" // empty')
+          orchestrator=$(echo "${json}" | jq -r '."orchestrator" // empty')
+          if [ -z "${web}" ] || [ -z "${orchestrator}" ]; then
+            echo "Missing ECR repository outputs." >&2
+            exit 1
+          fi
+          echo "web=${web}" >> "$GITHUB_OUTPUT"
+          echo "orchestrator=${orchestrator}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push web image
         uses: docker/build-push-action@v6
@@ -200,8 +158,8 @@ jobs:
           file: apps/web/Dockerfile
           push: true
           tags: |
-            ${{ steps.repos.outputs.web }}:${{ github.sha }}
-            ${{ steps.repos.outputs.web }}:latest
+            ${{ steps.ecr.outputs.web }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.web }}:latest
           build-args: |
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
 
@@ -212,34 +170,40 @@ jobs:
           file: services/orchestrator/Dockerfile
           push: true
           tags: |
-            ${{ steps.repos.outputs.orchestrator }}:${{ github.sha }}
-            ${{ steps.repos.outputs.orchestrator }}:latest
+            ${{ steps.ecr.outputs.orchestrator }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.orchestrator }}:latest
 
-      - name: Terraform apply (pin running tasks to this commit SHA)
-        working-directory: infra/terraform
+      - name: Terraform apply (pin image tags to commit SHA)
         env:
-          GITHUB_REPO: ${{ github.repository }}
-          VPC_ID: ${{ secrets.VPC_ID }}
-          SUBNETS_JSON: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
-          ORCH_URL: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
-          TF_VAR_web_next_public_clerk_publishable_key: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
+          TF_VAR_public_subnet_ids: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
+          TF_VAR_web_next_public_orchestrator_api_base_url: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
         run: |
           set -euo pipefail
-          if [ "${ENABLE_ECS}" = "true" ]; then
-            if [ -z "${VPC_ID:-}" ] || [ -z "${SUBNETS_JSON:-}" ]; then
-              echo "::error::Repository variable ENABLE_ECS is true but GitHub Environment ${{ needs.select.outputs.gh_environment }} is missing VPC_ID or PUBLIC_SUBNET_IDS_JSON. Add both secrets, or set ENABLE_ECS to false until ready."
-              exit 1
-            fi
+          terraform -chdir=infra/terraform apply -auto-approve -input=false \
+            -var-file="env/${TF_ENV}.tfvars" \
+            -var="github_repository=${{ github.repository }}" \
+            -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
+            -var="container_image_tags={web=\"${{ github.sha }}\",orchestrator=\"${{ github.sha }}\"}"
+
+      - name: Post-deploy ALB health check
+        run: |
+          set -euo pipefail
+          alb=$(terraform -chdir=infra/terraform output -raw web_load_balancer_dns_name)
+          if [ -z "${alb}" ] || [ "${alb}" = "null" ]; then
+            echo "Missing ALB DNS output." >&2
+            exit 1
           fi
-          if [ -n "${VPC_ID:-}" ]; then export TF_VAR_vpc_id="${VPC_ID}"; fi
-          if [ -n "${SUBNETS_JSON:-}" ]; then export TF_VAR_public_subnet_ids="${SUBNETS_JSON}"; fi
-          if [ -n "${ORCH_URL:-}" ]; then export TF_VAR_web_next_public_orchestrator_api_base_url="${ORCH_URL}"; fi
-          SHA="${{ github.sha }}"
-          EXTRA=(
-            -var-file="env/${TF_ENV}.tfvars"
-            -var="github_repository=${GITHUB_REPO}"
-            -var="enable_ecs=${ENABLE_ECS}"
-            # HCL map values must be quoted so Terraform never sees ${...} template syntax here.
-            -var="container_image_tags={web=\"${SHA}\",orchestrator=\"${SHA}\"}"
-          )
-          terraform apply -auto-approve -input=false "${EXTRA[@]}"
+
+          for i in $(seq 1 20); do
+            code=$(curl -k -o /dev/null -s -w "%{http_code}" "http://${alb}/" || true)
+            if [ "${code}" = "200" ] || [ "${code}" = "302" ] || [ "${code}" = "307" ]; then
+              echo "ALB health check passed with HTTP ${code}"
+              exit 0
+            fi
+            echo "Waiting for ALB (${i}/20), got HTTP ${code}"
+            sleep 15
+          done
+
+          echo "ALB health check failed" >&2
+          exit 1

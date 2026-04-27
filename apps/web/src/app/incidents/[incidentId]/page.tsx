@@ -71,8 +71,8 @@ export default async function IncidentDetailPage({
       <section className="card">
         <h2>Root cause hypotheses</h2>
         <ul>
-          {incident.root_cause_hypotheses.map((item) => (
-            <li key={item}>{item}</li>
+          {incident.root_cause_hypotheses.map((item, idx) => (
+            <li key={`hypothesis-${idx}`}>{item}</li>
           ))}
         </ul>
       </section>
@@ -80,8 +80,8 @@ export default async function IncidentDetailPage({
       <section className="card">
         <h2>Recommended actions</h2>
         <ul>
-          {incident.recommended_actions.map((item) => (
-            <li key={item}>{item}</li>
+          {incident.recommended_actions.map((item, idx) => (
+            <li key={`action-${idx}`}>{item}</li>
           ))}
         </ul>
       </section>
@@ -89,8 +89,8 @@ export default async function IncidentDetailPage({
       <section className="card">
         <h2>Agent trace</h2>
         <ol className="timeline-list">
-          {incident.agent_trace.map((item) => (
-            <li key={item}>{item}</li>
+          {incident.agent_trace.map((item, idx) => (
+            <li key={`trace-${idx}`}>{item}</li>
           ))}
         </ol>
       </section>
@@ -98,16 +98,16 @@ export default async function IncidentDetailPage({
       <section className="card">
         <h2>Verification</h2>
         <ul>
-          {(incident.verification.checks ?? []).map((check) => (
-            <li key={check}>{check}</li>
+          {(incident.verification.checks ?? []).map((check, idx) => (
+            <li key={`check-${idx}`}>{check}</li>
           ))}
         </ul>
         {(incident.verification.warnings ?? []).length > 0 ? (
           <div className="warning-box">
             <strong>Warnings</strong>
             <ul>
-              {(incident.verification.warnings ?? []).map((warning) => (
-                <li key={warning}>{warning}</li>
+              {(incident.verification.warnings ?? []).map((warning, idx) => (
+                <li key={`warning-${idx}`}>{warning}</li>
               ))}
             </ul>
           </div>
@@ -117,15 +117,15 @@ export default async function IncidentDetailPage({
       <section className="card">
         <h2>Evidence</h2>
         <div className="evidence-grid">
-          {Object.entries(incident.evidence).map(([key, values]) => (
-            <div key={key} className="evidence-group">
+          {Object.entries(incident.evidence).map(([key, values], idx) => (
+            <div key={`evidence-${idx}`} className="evidence-group">
               <h3>{key.replaceAll("_", " ")}</h3>
               {values.length === 0 ? (
                 <p className="muted">No matches</p>
               ) : (
                 <ul>
-                  {values.map((value) => (
-                    <li key={value}>{value}</li>
+                  {values.map((value, valIdx) => (
+                    <li key={`evidence-${idx}-${valIdx}`}>{value}</li>
                   ))}
                 </ul>
               )}

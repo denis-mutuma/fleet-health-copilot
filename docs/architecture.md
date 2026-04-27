@@ -99,4 +99,4 @@ Local deployment uses Docker Compose:
 - `web`: production-built Next.js app served with `next start`.
 - `orchestrator`: FastAPI API served by Uvicorn.
 
-CI runs web lint/build, orchestrator tests, and MCP tool tests on pull requests. Continuous AWS deploy uses **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)** with **S3 + DynamoDB** remote state (see [terraform-bootstrap.md](terraform-bootstrap.md)) and **GitHub OIDC**. See [aws-deployment-plan.md](aws-deployment-plan.md) for ECS and environment rollout.
+CI runs the checks defined in **[`.github/workflows/test.yml`](../.github/workflows/test.yml)** (web lint/build, markdown link validation, orchestrator tests, and MCP tests). AWS deploy automation runs through **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)** with Terraform in `infra/terraform` for the `dev` and `prod` environments.

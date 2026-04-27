@@ -10,6 +10,11 @@
     "web:dev": "npm --workspace apps/web run dev",
     "web:build": "npm --workspace apps/web run build",
     "web:start": "npm --workspace apps/web run start",
-    "web:lint": "npm --workspace apps/web run lint"
+    "web:lint": "npm --workspace apps/web run lint",
+    "docs:links": "python3 scripts/check_markdown_links.py",
+    "orchestrator:test": "PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests",
+    "orchestrator:latency:check": "PYTHONPATH=services/orchestrator/src .venv/bin/python scripts/check_orchestrator_latency_budget.py",
+    "mcp:test": "PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry/tests && PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests && PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests",
+    "quality:check": "npm run web:lint && npm run web:build && npm run docs:links && npm run orchestrator:test && npm run mcp:test"
   }
 }

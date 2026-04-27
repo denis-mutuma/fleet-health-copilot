@@ -128,7 +128,7 @@ Short triage reference for demos and deployments:
 
 ## Performance
 
-End-to-end latency and per-request timings are reported by [`evaluate_pipeline.py`](../services/orchestrator/scripts/evaluate_pipeline.py) (orchestration and time-to-diagnosis fields in its JSON output). For cloud runs, use **CloudWatch** logs and metrics (ECS task, ALB target response time) once you enable the standard AWS observability path described in [aws-deployment-plan.md](aws-deployment-plan.md).
+End-to-end latency and per-request timings are reported by [`evaluate_pipeline.py`](../services/orchestrator/scripts/evaluate_pipeline.py) (orchestration and time-to-diagnosis fields in its JSON output). For cloud runs, use CloudWatch logs and metrics (ECS task, ALB target response time) when running the optional Terraform deployment.
 
 ## Production Readiness Work
 
@@ -144,7 +144,7 @@ Completed hardening:
 Known remaining gaps:
 
 - S3 Vectors **ANN quality** still depends on using the same **`FLEET_EMBEDDING_PROVIDER`** (e.g. `openai`, `http`, `sentence_transformers`) and dimension for both [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) and live queries; the default `hash` provider is deterministic only (the API logs a warning when `s3vectors` + hash). See [s3-vectors-operations.md](s3-vectors-operations.md).
-- **Applying** Terraform in a specific AWS account, populating secrets, and validating ECS networking are **operator** steps. The repository already includes **S3 remote state**, **OIDC-based GitHub Actions** ([`deploy-aws.yml`](../.github/workflows/deploy-aws.yml)), and env tfvars; optional **`enable_s3_vectors_rag`** can create the vector bucket and index; **managed RDS** is still out of scope.
+- Deploys are automated through `.github/workflows/deploy-aws.yml` for `develop` (dev) and `main` (prod), including Terraform apply and ECR image publishing. Environment secrets and networking inputs (VPC/subnets/URLs) still need to be provided in GitHub Environments; managed RDS remains out of scope.
 - Agents remain **deterministic for planning and verification**; optional OpenAI **summary refine** and **diagnosis enrichment** exist behind env flags ([`llm.py`](../services/orchestrator/src/fleet_health_orchestrator/llm.py)); there is no LLM-authored action list outside verifier rules.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
 
@@ -159,7 +159,7 @@ Known remaining gaps:
 | MCP tool access | Implemented: telemetry, retrieval, incidents |
 | Evaluation metrics | Implemented with confusion-matrix output |
 | Architecture documentation | Implemented |
-| Cloud deployment story | Implemented in repo: Docker, Terraform (optional S3 Vectors + ECS), **GitHub Actions `deploy-aws`** with **OIDC** and **S3 backend**; applying to **your** account and secrets is operator-owned ([aws-deployment-plan.md](aws-deployment-plan.md)) |
+| Cloud deployment story | Implemented in repo: Docker + Terraform with GitHub Actions deploy automation for dev/prod environments |
 
 ## Next Steps
 
@@ -167,8 +167,6 @@ Recommended next implementation steps:
 
 1. Configure **`FLEET_EMBEDDING_PROVIDER`** and dimension consistently for S3 Vectors **query** and **`index_s3_vectors.py`** ingestion so ANN matches production vectors (see [s3-vectors-operations.md](s3-vectors-operations.md)).
 2. Deepen diagnosis or verifier grounding against retrieved evidence, or introduce optional LLM-backed variants.
-3. Validate **`deploy-aws`** in a dev AWS account (OIDC role, state bucket, first green ECS path if enabled).
+3. Validate the `deploy-aws.yml` path in a dev AWS account (state backend, IAM, and first green ECS path).
 4. Expand the evaluation dataset beyond the current small seed set.
-5. Add a presentation deck using `docs/presentation-outline.md`.
-
-See `docs/aws-deployment-plan.md` for the staged AWS rollout plan.
+5. Extend CI to include MCP tests and optional Terraform validation once the workflow requirements are finalized.

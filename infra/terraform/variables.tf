@@ -51,7 +51,7 @@ variable "manage_github_oidc_provider" {
 
 variable "github_actions_attach_administrator_access" {
   type        = bool
-  description = "When true, attach AWS managed AdministratorAccess to the GitHub OIDC role (convenient for first-time bootstrap; not least-privilege). Default false: attach your own policy to the role (see docs/iam-github-actions.md) or set true explicitly in tfvars."
+  description = "When true, attach AWS managed AdministratorAccess to the GitHub OIDC role (convenient for first-time bootstrap; not least-privilege). Default false: attach your own scoped policy to the role, or set true explicitly in tfvars."
   default     = false
 }
 

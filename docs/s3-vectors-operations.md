@@ -4,7 +4,7 @@ Use this when demoing **Amazon S3 Vectors** alongside the orchestrator ([`rag.py
 
 ## 0. Optional Terraform provisioning
 
-The root module can create an S3 Vectors **vector bucket** and **index** when **`enable_s3_vectors_rag = true`** (AWS provider 6.35+). See [aws-deployment-plan.md](aws-deployment-plan.md), [terraform-bootstrap.md](terraform-bootstrap.md), and [env/s3vectors.example.tfvars](../infra/terraform/env/s3vectors.example.tfvars). With **`enable_ecs`**, the orchestrator task role receives **`s3vectors:PutVectors`**, **`QueryVectors`**, and **`GetVectors`** on those resources. You still run **`index_s3_vectors.py`** after **`index_documents.py`** with the same embedding settings as production queries.
+The root module can create an S3 Vectors **vector bucket** and **index** when **`enable_s3_vectors_rag = true`** (AWS provider 6.35+). Configure this directly in [infra/terraform/env/dev.tfvars](../infra/terraform/env/dev.tfvars) or [infra/terraform/env/prod.tfvars](../infra/terraform/env/prod.tfvars). With **`enable_ecs`**, the orchestrator task role receives **`s3vectors:PutVectors`**, **`QueryVectors`**, and **`GetVectors`** on those resources. You still run **`index_s3_vectors.py`** after **`index_documents.py`** with the same embedding settings as production queries.
 
 ## 1. Index and query must match
 

@@ -1,215 +1,91 @@
-import logging
-import os
-import sqlite3
-from pathlib import Path
-from time import perf_counter
-
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
-from fleet_health_orchestrator.agents import (
-    AgentOrchestrator,
-    DiagnosisAgent,
-    MonitorAgent,
-    PlannerAgent,
-    ReporterAgent,
-    RetrieverAgent,
-    VerifierAgent
+from fleet_health_orchestrator.dependencies import initialize_dependencies
+from fleet_health_orchestrator.endpoints import router
+from fleet_health_orchestrator.exceptions import OrchestratorError
+from fleet_health_orchestrator.middleware import (
+    CorrelationIDMiddleware,
+    DebugLoggingMiddleware,
+    RequestLoggingMiddleware,
 )
-from fleet_health_orchestrator.models import (
-    IncidentReport,
-    IncidentStatusUpdate,
-    RagDocument,
-    RetrievalHit,
-    TelemetryEvent
-)
-from fleet_health_orchestrator.rag import build_retrieval_backend
-from fleet_health_orchestrator.repository import FleetRepository
 
-app = FastAPI(title="Fleet Health Orchestrator", version="0.1.0")
 
-_cors_origins_raw = (os.getenv("FLEET_CORS_ORIGINS") or "").strip()
-if _cors_origins_raw:
-    _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
-    if _cors_origins:
+def create_app() -> FastAPI:
+    dependencies = initialize_dependencies()
+
+    app = FastAPI(
+        title=dependencies.settings.api_title,
+        version=dependencies.settings.api_version,
+        docs_url="/docs",
+        openapi_url="/openapi.json",
+    )
+
+    app.state.dependencies = dependencies
+
+    if dependencies.settings.cors_origins_list:
+        dependencies.logger.info(
+            "CORS enabled for origins: %s",
+            ", ".join(dependencies.settings.cors_origins_list),
+        )
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=_cors_origins,
+            allow_origins=dependencies.settings.cors_origins_list,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
         )
 
-DEFAULT_DB_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "fleet_health.db"
-)
-repository = FleetRepository(Path(os.getenv("FLEET_DB_PATH", str(DEFAULT_DB_PATH))))
-_embedding_dim_raw = os.getenv("FLEET_S3_VECTORS_EMBEDDING_DIM")
-_embedding_dim = (
-    int(_embedding_dim_raw.strip())
-    if _embedding_dim_raw and _embedding_dim_raw.strip()
-    else None
-)
-retrieval_backend = build_retrieval_backend(
-    backend_name=os.getenv("FLEET_RETRIEVAL_BACKEND"),
-    s3_vectors_bucket=os.getenv("FLEET_S3_VECTORS_BUCKET"),
-    s3_vectors_index=os.getenv("FLEET_S3_VECTORS_INDEX"),
-    s3_vectors_index_arn=os.getenv("FLEET_S3_VECTORS_INDEX_ARN"),
-    s3_vectors_embedding_dimension=_embedding_dim,
-    s3_vectors_query_vector_json=os.getenv("FLEET_S3_VECTORS_QUERY_VECTOR_JSON"),
-    embedding_provider=os.getenv("FLEET_EMBEDDING_PROVIDER")
-)
-
-_log = logging.getLogger("fleet_health_orchestrator")
-if (os.getenv("FLEET_RETRIEVAL_BACKEND") or "").strip().lower() == "s3vectors":
-    _prov = (os.getenv("FLEET_EMBEDDING_PROVIDER") or "hash").strip().lower()
-    if _prov in ("hash", "deterministic", "pseudo", ""):
-        _log.warning(
-            "FLEET_RETRIEVAL_BACKEND=s3vectors with hash-style embeddings; ANN quality is not "
-            "production-like. Use openai, http, or sentence_transformers and match "
-            "FLEET_S3_VECTORS_EMBEDDING_DIM for index_s3_vectors.py and query."
-        )
-orchestrator = AgentOrchestrator(
-    monitor=MonitorAgent(),
-    retriever=RetrieverAgent(retrieval_backend=retrieval_backend),
-    diagnosis=DiagnosisAgent(),
-    planner=PlannerAgent(),
-    verifier=VerifierAgent(),
-    reporter=ReporterAgent()
-)
-METRICS: dict[str, float] = {
-    "events_ingested_total": 0,
-    "incidents_generated_total": 0,
-    "rag_queries_total": 0,
-    "rag_query_latency_ms_last": 0,
-    "orchestration_latency_ms_last": 0
-}
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-def _readiness() -> None:
-    """Raise HTTPException(503) if SQLite or repository is not usable."""
-    db_path = repository.db_path
-    parent = db_path.parent
-    try:
-        parent.mkdir(parents=True, exist_ok=True)
-        probe = parent / ".fleet_ready_probe"
-        probe.write_text("", encoding="utf-8")
-        probe.unlink(missing_ok=True)
-    except OSError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Database path not writable: {exc}"
-        ) from exc
-    try:
-        with sqlite3.connect(str(db_path)) as connection:
-            connection.execute("SELECT 1").fetchone()
-    except sqlite3.Error as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"SQLite not ready: {exc}"
-        ) from exc
-    try:
-        repository.list_rag_documents()
-    except sqlite3.Error as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Repository check failed: {exc}"
-        ) from exc
-
-
-@app.get("/ready")
-def ready() -> dict[str, str]:
-    _readiness()
-    return {"status": "ready"}
-
-
-@app.post("/v1/events", response_model=TelemetryEvent)
-def ingest_event(event: TelemetryEvent) -> TelemetryEvent:
-    repository.insert_event(event)
-    METRICS["events_ingested_total"] += 1
-    return event
-
-
-@app.get("/v1/events", response_model=list[TelemetryEvent])
-def list_events() -> list[TelemetryEvent]:
-    return repository.list_events()
-
-
-@app.post("/v1/incidents/from-event", response_model=IncidentReport)
-def create_incident_from_event(event: TelemetryEvent) -> IncidentReport:
-    started_at = perf_counter()
-    try:
-        incident = orchestrator.execute(
-            event=event,
-            rag_documents=repository.list_rag_documents()
-        )
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-
-    repository.insert_incident(incident)
-    METRICS["incidents_generated_total"] += 1
-    METRICS["orchestration_latency_ms_last"] = (perf_counter() - started_at) * 1000
-    return incident
-
-
-@app.get("/v1/incidents", response_model=list[IncidentReport])
-def list_incidents() -> list[IncidentReport]:
-    return repository.list_incidents()
-
-
-@app.get("/v1/incidents/{incident_id}", response_model=IncidentReport)
-def get_incident(incident_id: str) -> IncidentReport:
-    incident = repository.get_incident(incident_id)
-    if incident is None:
-        raise HTTPException(status_code=404, detail="Incident not found.")
-    return incident
-
-
-@app.patch("/v1/incidents/{incident_id}", response_model=IncidentReport)
-def update_incident(
-    incident_id: str,
-    update: IncidentStatusUpdate
-) -> IncidentReport:
-    incident = repository.update_incident_status(incident_id, update.status)
-    if incident is None:
-        raise HTTPException(status_code=404, detail="Incident not found.")
-    return incident
-
-
-@app.post("/v1/rag/documents", response_model=RagDocument)
-def upsert_rag_document(document: RagDocument) -> RagDocument:
-    repository.insert_rag_document(
-        document_id=document.document_id,
-        source=document.source,
-        title=document.title,
-        content=document.content,
-        tags=document.tags
+    app.add_middleware(
+        DebugLoggingMiddleware,
+        enabled=dependencies.settings.log_level.upper() == "DEBUG",
     )
-    return document
+    app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(CorrelationIDMiddleware)
+
+    dependencies.logger.info("Middleware registered: CorrelationID, RequestLogging, DebugLogging")
+
+    @app.exception_handler(OrchestratorError)
+    async def orchestrator_error_handler(_: Request, exc: OrchestratorError) -> JSONResponse:
+        dependencies.logger.warning("Handled orchestrator error: %s (%s)", exc.error_code, exc.message)
+        payload = exc.to_response()
+        payload["detail"] = exc.message
+        return JSONResponse(status_code=exc.status_code, content=payload)
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error_handler(
+        _: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        dependencies.logger.warning("Request validation error: %s", exc.errors())
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": exc.errors(),
+                "error": {
+                    "code": "validation_error",
+                    "message": "Request payload validation failed.",
+                    "details": {"errors": exc.errors()},
+                },
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
+        dependencies.logger.exception("Unhandled internal error: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "code": "internal_error",
+                    "message": "Unexpected server error.",
+                }
+            },
+        )
+
+    app.include_router(router)
+    return app
 
 
-@app.get("/v1/rag/search", response_model=list[RetrievalHit])
-def rag_search(query: str, limit: int = 5) -> list[RetrievalHit]:
-    started_at = perf_counter()
-    documents = repository.list_rag_documents()
-    hits = retrieval_backend.search(query=query, documents=documents, limit=limit)
-    METRICS["rag_queries_total"] += 1
-    METRICS["rag_query_latency_ms_last"] = (perf_counter() - started_at) * 1000
-    return hits
-
-
-@app.post("/v1/orchestrate/event", response_model=IncidentReport)
-def orchestrate_event(event: TelemetryEvent) -> IncidentReport:
-    repository.insert_event(event)
-    METRICS["events_ingested_total"] += 1
-    return create_incident_from_event(event)
-
-
-@app.get("/v1/metrics")
-def get_metrics() -> dict[str, float]:
-    return METRICS
+app = create_app()

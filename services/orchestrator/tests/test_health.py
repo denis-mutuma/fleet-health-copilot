@@ -363,6 +363,8 @@ def test_get_incident_by_id_returns_404_for_unknown_id(tmp_path, monkeypatch) ->
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Incident not found."
+    assert response.json()["error"]["code"] == "resource_not_found"
+    assert response.json()["error"]["message"] == "Incident not found."
 
 
 def test_update_incident_status(tmp_path, monkeypatch) -> None:
@@ -403,6 +405,8 @@ def test_update_incident_status_returns_404_for_unknown_id(tmp_path, monkeypatch
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Incident not found."
+    assert response.json()["error"]["code"] == "resource_not_found"
+    assert response.json()["error"]["message"] == "Incident not found."
 
 
 def test_update_incident_status_rejects_unknown_status(tmp_path, monkeypatch) -> None:
@@ -413,6 +417,10 @@ def test_update_incident_status_rejects_unknown_status(tmp_path, monkeypatch) ->
     )
 
     assert response.status_code == 422
+    payload = response.json()
+    assert payload["error"]["code"] == "validation_error"
+    assert payload["error"]["message"] == "Request payload validation failed."
+    assert isinstance(payload["detail"], list)
 
 
 def test_orchestration_rejects_non_anomalous_event(tmp_path, monkeypatch) -> None:
@@ -434,6 +442,8 @@ def test_orchestration_rejects_non_anomalous_event(tmp_path, monkeypatch) -> Non
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Event does not exceed threshold."
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert response.json()["error"]["message"] == "Event does not exceed threshold."
 
 
 def test_orchestration_reports_empty_evidence_without_rag(tmp_path, monkeypatch) -> None:
@@ -480,6 +490,10 @@ def test_invalid_event_payload_returns_422(tmp_path, monkeypatch) -> None:
     )
 
     assert response.status_code == 422
+    payload = response.json()
+    assert payload["error"]["code"] == "validation_error"
+    assert payload["error"]["message"] == "Request payload validation failed."
+    assert isinstance(payload["detail"], list)
 
 
 def test_metrics_endpoint(tmp_path, monkeypatch) -> None:
@@ -532,6 +546,54 @@ def test_evaluate_pipeline_reports_confusion_metrics(tmp_path, monkeypatch) -> N
     assert "retrieval_mean_reciprocal_rank" in metrics
     assert "verifier_pass_rate" in metrics
     assert "runbook_action_grounding_rate" in metrics
+
+
+def test_evaluate_pipeline_reports_latency_metrics(tmp_path, monkeypatch) -> None:
+    evaluate_pipeline = _load_evaluate_pipeline()
+    events_file = tmp_path / "events.jsonl"
+    events = [
+        {"event_id": "evt_a", "value": 80.0, "threshold": 65.0},
+        {"event_id": "evt_b", "value": 20.0, "threshold": 65.0}
+    ]
+    events_file.write_text(
+        "\n".join(json.dumps(event) for event in events),
+        encoding="utf-8"
+    )
+    responses = iter(
+        [
+            (200, {"latency_ms": 12.5, "verification": {"passed": True}}),
+            (400, {})
+        ]
+    )
+
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: dict[str, object]) -> None:
+            self.status_code = status_code
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            raise AssertionError("unexpected non-evaluation status")
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
+    def fake_post(*args, **kwargs) -> FakeResponse:
+        status_code, payload = next(responses)
+        return FakeResponse(status_code, payload)
+
+    # Use fixed perf_counter values to keep this regression check deterministic.
+    perf_ticks = iter([0.0, 0.010, 1.0, 1.030])
+
+    monkeypatch.setattr(evaluate_pipeline.httpx, "post", fake_post)
+    monkeypatch.setattr(evaluate_pipeline, "perf_counter", lambda: next(perf_ticks))
+
+    metrics = evaluate_pipeline.evaluate(
+        events_file=events_file,
+        base_url="http://127.0.0.1:8000"
+    )
+
+    assert metrics["average_response_latency_ms"] == pytest.approx(20.0)
+    assert metrics["average_time_to_diagnosis_ms"] == pytest.approx(12.5)
 
 
 def test_runbook_action_grounding_helper() -> None:

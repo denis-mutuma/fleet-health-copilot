@@ -1,53 +1,145 @@
 # Fleet Health Copilot
 
-Fleet Health Copilot is a software-only capstone project for monitoring a simulated robotics or IoT fleet. It ingests telemetry, detects anomalies, retrieves operational context, and generates operator-facing incident reports.
+A software-only **multi-agent platform** for detecting and diagnosing incidents in simulated robotics/IoT fleets. 
+
+Ingests telemetry events → detects anomalies → retrieves operational context (runbooks, incident history) → generates evidence-grounded incident reports through specialized agents (Monitor → Retriever → Diagnosis → Planner → Verifier → Reporter).
+
+## What This Is
+
+- **Capstone project** demonstrating multi-agent orchestration, RAG, MCP, production architecture, and cloud deployment patterns.
+- **Software-only**: No hardware simulation or integration required.
+- **Fast local demo**: Fully runnable on your machine with SQLite persistence and seed data.
+- **Production-ready foundations**: CI/CD, Docker containerization, IaC, JSON schemas, and structured evaluation metrics.
+
+## Quick Start
+
+### Prerequisites
+- **Node.js 22+** (web app)
+- **Python 3.11+** (orchestrator)
+- **Clerk test keys** (authentication)
+
+### 1. Install Dependencies
+
+```bash
+# Node.js web app
+npm install --workspace apps/web
+
+# Python environment
+python -m venv .venv
+.venv/bin/pip install -e "services/orchestrator[dev]"
+```
+
+### 2. Configure Environment
+
+Copy and fill out Clerk keys in the web app:
+
+```bash
+cp apps/web/.env.example apps/web/.env.local
+# Edit with your Clerk publishable and secret keys
+```
+
+### 3. Run Locally
+
+Start the orchestrator (terminal 1):
+
+```bash
+PYTHONPATH=services/orchestrator/src .venv/bin/uvicorn fleet_health_orchestrator.main:app --reload --port 8000
+```
+
+Start the web app (terminal 2):
+
+```bash
+npm run web:dev
+```
+
+Visit `http://localhost:3000` and sign in with Clerk.
+
+### 4. Populate RAG Context
+
+Index the seed runbooks into the orchestrator's retrieval backend:
+
+```bash
+.venv/bin/python services/orchestrator/scripts/index_documents.py
+```
+
+### 5. Simulate an Incident
+
+Click **"Simulate thermal incident"** on the dashboard. The system will:
+1. Detect the threshold breach (Monitor Agent).
+2. Retrieve relevant runbooks and incident history (Retriever Agent).
+3. Diagnose root causes (Diagnosis Agent).
+4. Plan corrective actions (Planner Agent).
+5. Verify the plan (Verifier Agent).
+6. Generate a final incident report (Reporter Agent).
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  operator["Operator"] --> webApp["Next.js Web App"]
-  webApp --> webApi["Next.js API Route"]
-  webApi --> orchestrator["FastAPI Orchestrator"]
-  orchestrator --> monitor["Monitor Agent"]
-  monitor --> retriever["Retriever Agent"]
-  retriever --> rag["Runbooks And Incident History"]
-  retriever --> diagnosis["Diagnosis Agent"]
-  diagnosis --> planner["Planner Agent"]
-  planner --> verifier["Verifier Agent"]
-  verifier --> reporter["Reporter Agent"]
-  reporter --> db["SQLite"]
-  webApp --> detail["Incident Detail View"]
+```
+┌─ Next.js Web App (Clerk auth)
+│  └─ /v1/* FastAPI Orchestrator
+│     ├─ Monitor Agent (anomaly detection)
+│     ├─ Retriever Agent (RAG over runbooks, history)
+│     ├─ Diagnosis Agent (hypothesize root causes)
+│     ├─ Planner Agent (recommend actions)
+│     ├─ Verifier Agent (validate recommendations)
+│     ├─ Reporter Agent (compose incident report)
+│     └─ SQLite + JSONL (persistence + seed data)
 ```
 
-- `apps/web` is the Clerk-protected Next.js dashboard.
-- `services/orchestrator` is the FastAPI service for telemetry, RAG, orchestration, incidents, and metrics.
-- `services/orchestrator/data` contains local seed events and runbooks.
-- `services/mcp-*` contains MCP tool servers for telemetry, retrieval, incident, and maintenance workflows.
-- `packages/contracts` contains JSON schemas for API contract alignment.
+- **apps/web** — Authenticated operator dashboard (Next.js, Clerk).
+- **services/orchestrator** — Event ingestion, agent orchestration, RAG, incident persistence.
+- **services/mcp-*** — MCP tool servers exposing telemetry, retrieval, and incident operations.
+- **packages/contracts** — Shared JSON schemas for API contracts.
+- **services/orchestrator/data** — Seed runbooks and telemetry events (JSONL).
 
-More detail:
+## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Demo runbook](docs/demo-runbook.md)
+- [Architecture deep-dive](docs/architecture.md)
+- [Demo walkthrough](docs/demo-runbook.md)
+- [API reference](docs/API.md)
 - [Technical report](docs/technical-report.md)
-- [Presentation outline](docs/presentation-outline.md)
-- [AWS deployment plan](docs/aws-deployment-plan.md)
-- [GitHub Actions → AWS step-by-step](docs/github-actions-aws-deploy.md)
+- [RAG with S3 Vectors (optional)](docs/s3-vectors-operations.md)
 
-## Local Setup
+## Key Commands
 
-Install web dependencies:
+| Command | Purpose |
+|---------|---------|
+| `npm run web:dev` | Start web app (port 3000) |
+| `npm run web:lint` | Lint web code |
+| `npm run web:build` | Build web for production |
+| `npm run docs:links` | Validate local links in markdown docs |
+| `npm run quality:check` | Run lint + web build + docs link check + orchestrator tests + MCP tests |
+| `npm run orchestrator:latency:check` | Check average time-to-diagnosis against a local latency budget |
+| `.venv/bin/uvicorn fleet_health_orchestrator.main:app --reload --port 8000` | Start orchestrator |
+| `PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests` | Run all orchestrator tests |
+| `.venv/bin/python services/orchestrator/scripts/evaluate_pipeline.py` | Run full evaluation (precision, recall, latency, etc.) |
+| `.venv/bin/python services/orchestrator/scripts/index_documents.py` | Index seed runbooks into SQLite RAG |
+| `.venv/bin/python services/orchestrator/scripts/replay_events.py` | Replay seed events to test end-to-end |
 
+## Testing & Evaluation
+
+### Unit and Integration Tests
 ```bash
-npm install --workspace apps/web
+# Run orchestrator tests
+PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests
+
+# Run web tests
+npm run web:test
 ```
 
-Create and install the Python environment:
+### End-to-End Evaluation
+```bash
+# Full pipeline evaluation: precision, recall, retrieval hit rate, mean reciprocal rank, verifier pass rate, latency
+.venv/bin/python services/orchestrator/scripts/evaluate_pipeline.py
+```
+
+## Docker (Optional)
 
 ```bash
-python -m venv .venv
-.venv/bin/pip install -e "services/orchestrator[dev]"
+docker compose up --build
+```
+
+Starts the orchestrator and all MCP servers in containers. Web app still runs locally.
 ```
 
 Configure Clerk and the orchestrator URL:
@@ -150,17 +242,38 @@ Run the main checks:
 ```bash
 npm run web:lint
 npm run web:build
+npm run docs:links
 PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests
 PYTHONPATH=services/mcp-telemetry/src .venv/bin/pytest -q services/mcp-telemetry/tests
 PYTHONPATH=services/mcp-retrieval/src .venv/bin/pytest -q services/mcp-retrieval/tests
 PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents/tests
-bash scripts/validate_terraform.sh
-bash scripts/verify_github_actions_deploy_prereqs.sh
+
+# one-command quality gate from repo root
+npm run quality:check
 ```
 
-The pull request **`test.yml`** workflow runs the same web, orchestrator, MCP checks, and **`scripts/validate_terraform.sh`**. Run **`bash scripts/validate_terraform.sh`** locally (requires Terraform on `PATH`) before changing infra. Before a first AWS / GitHub Actions deploy, run **`bash scripts/verify_github_actions_deploy_prereqs.sh`** (Terraform validate plus optional AWS identity check).
+The pull request workflow in **`.github/workflows/test.yml`** runs the current CI checks for this repository: web lint/build, markdown link checks, orchestrator tests, and MCP tests.
 
-For **`dev.yml`** and **`test.yml`**, add a **repository** Actions secret **`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`** (your Clerk **test** publishable key, same as local `.env.local`). Next.js runs Clerk during `next build`, and Clerk rejects fake keys.
+The same workflow also includes a **non-blocking** orchestration latency guard job (`orchestrator-latency-guard`). It reports when average time-to-diagnosis exceeds the configured budget (`ORCHESTRATOR_LATENCY_BUDGET_MS`) without failing the full pipeline.
+
+AWS deployment is automated in **`.github/workflows/deploy-aws.yml`**:
+
+- Push to `develop` deploys to the `dev` GitHub Environment.
+- Push to `main` deploys to the `prod` GitHub Environment.
+- `workflow_dispatch` supports manual `dev` or `prod` deploy runs.
+
+The deploy workflow performs OIDC auth, Terraform init/validate/apply, ECR image build+push for web/orchestrator, a second Terraform apply pinned to the commit SHA image tags, and a post-deploy ALB health check.
+
+Required per-environment GitHub secrets for deploys:
+
+- `AWS_ROLE_ARN`
+- `TF_STATE_BUCKET`
+- `TF_LOCK_TABLE`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+- `VPC_ID`
+- `PUBLIC_SUBNET_IDS_JSON`
+- `WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` (recommended for browser API routing)
 
 You can also run the full local stack with Docker:
 
@@ -176,7 +289,9 @@ The web container builds the Next.js app and serves it with `next start`. Supply
 
 The current implementation is a concise capstone core: deterministic six-agent orchestration (monitor through reporter), lexical RAG (default), optional AWS S3 Vectors RAG with pluggable embeddings, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics (including retrieval mean reciprocal rank and verifier pass rate), and AWS deployment scaffolding. Retrieval lives in `services/orchestrator/src/fleet_health_orchestrator/rag.py` with helpers in `embeddings.py`.
 
-AWS deploy: pushes to **`develop`**, **`staging`**, and **`main`** run **[`.github/workflows/deploy-aws.yml`](.github/workflows/deploy-aws.yml)** (OIDC + **S3 remote state** + ECR build/push + Terraform). Configure GitHub Environments **`dev`**, **`test`**, **`prod`** and follow [docs/aws-deployment-plan.md](docs/aws-deployment-plan.md) and [docs/terraform-bootstrap.md](docs/terraform-bootstrap.md). For S3 Vectors and embeddings, keep **`FLEET_EMBEDDING_PROVIDER`** aligned; optional OpenAI flags are documented under **Optional OpenAI assist** above.
+AWS infrastructure remains scaffolded under `infra/terraform` for optional environment provisioning. For S3 Vectors and embeddings, keep **`FLEET_EMBEDDING_PROVIDER`** aligned with indexing and query-time configuration; optional OpenAI flags are documented under **Optional OpenAI assist** above.
+
+The canonical deployment path is now GitHub Actions + Terraform under `infra/terraform/env/dev.tfvars` and `infra/terraform/env/prod.tfvars`.
 
 ## Git and history
 
@@ -186,4 +301,4 @@ If you rewrite `main` (for example to strip automated commit trailers), publish 
 git push --force-with-lease origin main
 ```
 
-Operational checklist for S3 Vectors in AWS: [docs/s3-vectors-operations.md](docs/s3-vectors-operations.md). Marp slide export: [docs/presentation-slides.marp.md](docs/presentation-slides.marp.md).
+Operational checklist for S3 Vectors in AWS: [docs/s3-vectors-operations.md](docs/s3-vectors-operations.md).

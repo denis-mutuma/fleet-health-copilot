@@ -1,0 +1,41 @@
+{
+  "incident_not_found": {
+    "status_code": 404,
+    "body": {
+      "detail": "Incident not found.",
+      "error": {
+        "code": "resource_not_found",
+        "message": "Incident not found.",
+        "details": {
+          "incident_id": "inc_missing"
+        }
+      }
+    }
+  },
+  "non_anomalous_event": {
+    "status_code": 400,
+    "body": {
+      "detail": "Event does not exceed threshold.",
+      "error": {
+        "code": "invalid_request",
+        "message": "Event does not exceed threshold."
+      }
+    }
+  },
+  "invalid_status_validation_error": {
+    "status_code": 422,
+    "body": {
+      "error": {
+        "code": "validation_error",
+        "message": "Request payload validation failed."
+      },
+      "first_detail": {
+        "loc": [
+          "body",
+          "status"
+        ],
+        "type": "literal_error"
+      }
+    }
+  }
+}

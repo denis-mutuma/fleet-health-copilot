@@ -28,7 +28,7 @@ export default async function RagPage() {
           <span>{totalChunks} indexed chunks</span>
           <span>{unavailable ? "Backend unavailable" : "Backend connected"}</span>
         </div>
-        <div className="actions">
+        <div className="actions action-group">
           <Link href="/" className="secondary-button rag-link-button">
             Back to dashboard
           </Link>

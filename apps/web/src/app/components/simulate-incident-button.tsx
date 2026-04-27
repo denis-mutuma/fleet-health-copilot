@@ -28,10 +28,12 @@ export default function SimulateIncidentButton() {
   }
 
   return (
-    <div className="actions">
-      <button className="button" onClick={handleClick} disabled={isPending}>
-        {isPending ? "Simulating..." : "Simulate thermal incident"}
-      </button>
+    <div className="actions-panel">
+      <div className="actions action-group">
+        <button className="button" onClick={handleClick} disabled={isPending}>
+          {isPending ? "Simulating..." : "Simulate thermal incident"}
+        </button>
+      </div>
       {errorMessage ? <p className="error">{errorMessage}</p> : null}
     </div>
   );

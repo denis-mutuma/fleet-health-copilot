@@ -4,7 +4,8 @@ import { getIncident, type IncidentReport } from "@/lib/incidents";
 import IncidentStatusActions from "@/app/components/incident-status-actions";
 
 function statusLabel(status: IncidentReport["status"]): string {
-  return status.toUpperCase();
+  const normalized = status.replace("_", " ");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 export default async function IncidentDetailPage({
@@ -62,11 +63,16 @@ export default async function IncidentDetailPage({
           incidentId={incident.incident_id}
           status={incident.status}
         />
-        <div className="actions">
-          <Link href={`/chat?incidentId=${encodeURIComponent(incident.incident_id)}`}>
+        <div className="actions action-group">
+          <Link
+            href={`/chat?incidentId=${encodeURIComponent(incident.incident_id)}`}
+            className="button rag-link-button"
+          >
             Open chat for this incident
           </Link>
-          <Link href="/">Back to dashboard</Link>
+          <Link href="/" className="secondary-button rag-link-button">
+            Back to dashboard
+          </Link>
         </div>
       </header>
 

@@ -52,7 +52,7 @@ export default function IncidentStatusActions({
 
   return (
     <div className="actions-panel">
-      <div className="actions">
+      <div className="actions action-group-tight">
         {status === "open" ? (
           <button
             className="button secondary-button"

@@ -5,7 +5,8 @@ import RagUploadForm from "./components/rag-upload-form";
 import { listIncidents, type IncidentReport } from "@/lib/incidents";
 
 function statusLabel(status: IncidentReport["status"]): string {
-  return status.replace("_", " ").toUpperCase();
+  const normalized = status.replace("_", " ");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 export default async function HomePage() {
@@ -49,7 +50,7 @@ export default async function HomePage() {
           <span>6-agent orchestration</span>
           <span>Retrieval-backed reasoning</span>
         </div>
-        <div className="actions">
+        <div className="actions action-group">
           <Link href="/chat" className="secondary-button rag-link-button">
             Open operator chat
           </Link>

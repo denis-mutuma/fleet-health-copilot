@@ -198,7 +198,7 @@ function MessageCard({
             <span className="chat-incident-id">{String(payload.incident_id)}</span>
             {payload.status ? <StatusBadge status={String(payload.status)} /> : null}
           </div>
-          <div className="chat-incident-actions" style={{ marginTop: 8 }}>
+          <div className="chat-incident-actions">
             <Link href={`/incidents/${encodeURIComponent(String(payload.incident_id))}`} className="secondary-button">
               View incident
             </Link>
@@ -415,7 +415,7 @@ export default function ChatClient() {
           <span>{activeSession?.incident_id ? `Scoped to ${activeSession.incident_id}` : "General ops mode"}</span>
           <span>Citations grouped by source</span>
         </div>
-        <div className="actions">
+        <div className="actions action-group">
           <Link href="/" className="secondary-button rag-link-button">
             Back to dashboard
           </Link>
@@ -468,7 +468,7 @@ export default function ChatClient() {
         </aside>
 
         <div className="chat-main">
-          <div className="chat-quick-actions">
+          <div className="chat-quick-actions action-group">
             {QUICK_ACTIONS.map((item) => (
               <button
                 key={item.label}

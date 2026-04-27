@@ -33,6 +33,10 @@ infra/terraform/backend.ci.hcl
 .codex
 .codex/
 
+# Copilot and local ideation files
+.github/copilot-instructions.md
+idea/
+
 # Next.js build output
 apps/web/.next/
 

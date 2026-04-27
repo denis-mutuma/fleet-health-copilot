@@ -155,6 +155,15 @@ jobs:
             -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
             -var="container_image_tags={web=\"${{ github.sha }}\",orchestrator=\"${{ github.sha }}\"}"
 
+      - name: Wait for ECS services to stabilize
+        run: |
+          set -euo pipefail
+          cluster=$(terraform -chdir=infra/terraform output -raw ecs_cluster_name)
+          echo "Waiting for ECS services to stabilize on cluster: ${cluster}"
+          aws ecs wait services-stable \
+            --cluster "${cluster}" \
+            --services web orchestrator
+
       - name: Post-deploy ALB health check
         run: |
           set -euo pipefail
@@ -164,14 +173,14 @@ jobs:
             exit 1
           fi
 
-          for i in $(seq 1 20); do
+          for i in $(seq 1 10); do
             code=$(curl -k -o /dev/null -s -w "%{http_code}" "http://${alb}/" || true)
             if [ "${code}" = "200" ] || [ "${code}" = "302" ] || [ "${code}" = "307" ]; then
               echo "ALB health check passed with HTTP ${code}"
               exit 0
             fi
-            echo "Waiting for ALB (${i}/20), got HTTP ${code}"
-            sleep 15
+            echo "Waiting for ALB (${i}/10), got HTTP ${code}"
+            sleep 10
           done
 
           echo "ALB health check failed" >&2

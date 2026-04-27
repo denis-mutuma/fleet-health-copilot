@@ -268,11 +268,18 @@ class FleetRepository:
     def get_incident(self, incident_id: str) -> IncidentReport | None:
         with self._connect() as connection:
             row = connection.execute(
-                """
+                self._sql(
+                    """
                 SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
                 FROM incidents
                 WHERE incident_id = ?
                 """,
+                    """
+                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
+                FROM incidents
+                WHERE incident_id = %s
+                """,
+                ),
                 (incident_id,)
             ).fetchone()
 

@@ -169,6 +169,63 @@ class FleetRepository:
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_ingestion_jobs_idempotency_key ON rag_ingestion_jobs(idempotency_key)"
                 )
 
+            connection.execute(
+                self._sql(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_sessions (
+                        session_id TEXT PRIMARY KEY,
+                        incident_id TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """,
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_sessions (
+                        session_id TEXT PRIMARY KEY,
+                        incident_id TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """,
+                )
+            )
+
+            connection.execute(
+                self._sql(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        message_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        citations_json TEXT NOT NULL DEFAULT '[]',
+                        action TEXT,
+                        action_status TEXT,
+                        action_payload_json TEXT NOT NULL DEFAULT '{}',
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(session_id) REFERENCES chat_sessions(session_id)
+                    )
+                    """,
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        message_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL REFERENCES chat_sessions(session_id),
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        citations_json TEXT NOT NULL DEFAULT '[]',
+                        action TEXT,
+                        action_status TEXT,
+                        action_payload_json TEXT NOT NULL DEFAULT '{}',
+                        created_at TEXT NOT NULL
+                    )
+                    """,
+                )
+            )
+
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at ON chat_messages(session_id, created_at)"
+            )
+
     def _incident_from_row(self, row: sqlite3.Row) -> IncidentReport:
         return IncidentReport(
             incident_id=row["incident_id"],
@@ -634,6 +691,203 @@ class FleetRepository:
                 "error_message": row["error_message"],
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def create_chat_session(self, *, session_id: str, incident_id: str | None) -> dict[str, object]:
+        now = _utc_now_iso()
+        with self._connect() as connection:
+            connection.execute(
+                self._sql(
+                    """
+                    INSERT OR REPLACE INTO chat_sessions
+                    (session_id, incident_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    """
+                    INSERT INTO chat_sessions
+                    (session_id, incident_id, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (session_id) DO UPDATE SET
+                      incident_id = EXCLUDED.incident_id,
+                      updated_at = EXCLUDED.updated_at
+                    """,
+                ),
+                (session_id, incident_id, now, now),
+            )
+
+        return {
+            "session_id": session_id,
+            "incident_id": incident_id,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def get_chat_session(self, session_id: str) -> dict[str, object] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                self._sql(
+                    """
+                    SELECT session_id, incident_id, created_at, updated_at
+                    FROM chat_sessions
+                    WHERE session_id = ?
+                    """,
+                    """
+                    SELECT session_id, incident_id, created_at, updated_at
+                    FROM chat_sessions
+                    WHERE session_id = %s
+                    """,
+                ),
+                (session_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return {
+            "session_id": row["session_id"],
+            "incident_id": row["incident_id"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def list_chat_sessions(self, limit: int = 50) -> list[dict[str, object]]:
+        capped_limit = max(1, min(limit, 200))
+        with self._connect() as connection:
+            rows = connection.execute(
+                self._sql(
+                    """
+                    SELECT session_id, incident_id, created_at, updated_at
+                    FROM chat_sessions
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    """
+                    SELECT session_id, incident_id, created_at, updated_at
+                    FROM chat_sessions
+                    ORDER BY updated_at DESC
+                    LIMIT %s
+                    """,
+                ),
+                (capped_limit,),
+            ).fetchall()
+
+        return [
+            {
+                "session_id": row["session_id"],
+                "incident_id": row["incident_id"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def insert_chat_message(
+        self,
+        *,
+        message_id: str,
+        session_id: str,
+        role: str,
+        content: str,
+        citations: list[dict[str, object]] | None = None,
+        action: str | None = None,
+        action_status: str | None = None,
+        action_payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        now = _utc_now_iso()
+        with self._connect() as connection:
+            connection.execute(
+                self._sql(
+                    """
+                    INSERT OR REPLACE INTO chat_messages
+                    (message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    """
+                    INSERT INTO chat_messages
+                    (message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (message_id) DO UPDATE SET
+                      role = EXCLUDED.role,
+                      content = EXCLUDED.content,
+                      citations_json = EXCLUDED.citations_json,
+                      action = EXCLUDED.action,
+                      action_status = EXCLUDED.action_status,
+                      action_payload_json = EXCLUDED.action_payload_json
+                    """,
+                ),
+                (
+                    message_id,
+                    session_id,
+                    role,
+                    content,
+                    json.dumps(citations or []),
+                    action,
+                    action_status,
+                    json.dumps(action_payload or {}),
+                    now,
+                ),
+            )
+            connection.execute(
+                self._sql(
+                    """
+                    UPDATE chat_sessions
+                    SET updated_at = ?
+                    WHERE session_id = ?
+                    """,
+                    """
+                    UPDATE chat_sessions
+                    SET updated_at = %s
+                    WHERE session_id = %s
+                    """,
+                ),
+                (now, session_id),
+            )
+
+        return {
+            "message_id": message_id,
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "citations": citations or [],
+            "action": action,
+            "action_status": action_status,
+            "action_payload": action_payload or {},
+            "created_at": now,
+        }
+
+    def list_chat_messages(self, session_id: str) -> list[dict[str, object]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                self._sql(
+                    """
+                    SELECT message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, created_at
+                    FROM chat_messages
+                    WHERE session_id = ?
+                    ORDER BY created_at ASC
+                    """,
+                    """
+                    SELECT message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, created_at
+                    FROM chat_messages
+                    WHERE session_id = %s
+                    ORDER BY created_at ASC
+                    """,
+                ),
+                (session_id,),
+            ).fetchall()
+
+        return [
+            {
+                "message_id": row["message_id"],
+                "session_id": row["session_id"],
+                "role": row["role"],
+                "content": row["content"],
+                "citations": json.loads(row["citations_json"]),
+                "action": row["action"],
+                "action_status": row["action_status"],
+                "action_payload": json.loads(row["action_payload_json"]),
+                "created_at": row["created_at"],
             }
             for row in rows
         ]

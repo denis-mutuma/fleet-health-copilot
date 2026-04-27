@@ -141,3 +141,59 @@ class RetrievalHit(BaseModel):
     title: str
     score: float = Field(ge=0.0)
     excerpt: str
+
+
+class ChatSessionCreateRequest(BaseModel):
+    incident_id: str | None = None
+
+
+class ChatSession(BaseModel):
+    session_id: str
+    incident_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatCitation(BaseModel):
+    document_id: str
+    source: str
+    title: str
+    score: float = Field(ge=0.0)
+    excerpt: str
+
+
+class ChatMessage(BaseModel):
+    message_id: str
+    session_id: str
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1)
+    citations: list[ChatCitation] = Field(default_factory=list)
+    action: str | None = None
+    action_status: Literal["success", "error"] | None = None
+    action_payload: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime
+
+    @field_validator("message_id", "session_id", "content")
+    @classmethod
+    def _chat_required_non_empty(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
+
+
+class ChatMessageCreateRequest(BaseModel):
+    content: str = Field(min_length=1)
+
+    @field_validator("content")
+    @classmethod
+    def _chat_message_non_empty(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
+
+
+class ChatConversation(BaseModel):
+    session: ChatSession
+    messages: list[ChatMessage]

@@ -1,6 +1,8 @@
 """FastAPI route handlers for health, incident, and RAG operations."""
 
 import sqlite3
+from datetime import datetime, timezone
+import re
 from time import perf_counter
 from uuid import uuid4
 
@@ -18,6 +20,11 @@ from fleet_health_orchestrator.ingestion import (
     is_supported_upload,
 )
 from fleet_health_orchestrator.models import (
+    ChatConversation,
+    ChatMessage,
+    ChatMessageCreateRequest,
+    ChatSession,
+    ChatSessionCreateRequest,
     IncidentReport,
     IncidentStatusUpdate,
     RagDeletionResponse,
@@ -55,6 +62,10 @@ RAG_DOCUMENT_EXAMPLE = {
 
 INCIDENT_STATUS_UPDATE_EXAMPLE = {
     "status": "acknowledged",
+}
+
+CHAT_MESSAGE_EXAMPLE = {
+    "content": "What runbooks should I follow for battery thermal drift?",
 }
 
 
@@ -233,6 +244,351 @@ def _normalize_chunk_title(title: str) -> str:
 def _to_ingestion_job(payload: dict[str, object]) -> RagIngestionJob:
     """Validate and normalize repository payload into API job model."""
     return RagIngestionJob.model_validate(payload)
+
+
+def _to_chat_session(payload: dict[str, object]) -> ChatSession:
+    """Validate and normalize repository payload into API chat session model."""
+    return ChatSession.model_validate(payload)
+
+
+def _to_chat_message(payload: dict[str, object]) -> ChatMessage:
+    """Validate and normalize repository payload into API chat message model."""
+    return ChatMessage.model_validate(payload)
+
+
+def _citation_from_hit(hit: RetrievalHit) -> dict[str, object]:
+    return {
+        "document_id": hit.document_id,
+        "source": hit.source,
+        "title": hit.title,
+        "score": hit.score,
+        "excerpt": hit.excerpt,
+    }
+
+
+def _compose_retrieval_answer(
+    *,
+    content: str,
+    hits: list[RetrievalHit],
+    incident: IncidentReport | None,
+) -> str:
+    """Compose a deterministic answer grounded in retrieval hits and incident context."""
+    if not hits:
+        if incident is not None:
+            first_actions = incident.recommended_actions[:2]
+            action_hint = "; ".join(first_actions) if first_actions else "review telemetry and runbook corpus"
+            return (
+                f"No matching knowledge base entries found for that query. "
+                f"Based on incident {incident.incident_id} on {incident.device_id}, "
+                f"the recommended starting point is: {action_hint}. "
+                "Try rephrasing with metric names (battery_temp_c, motor_current_a) or tag keywords."
+            )
+        return (
+            "No knowledge base entries matched that query. "
+            "Try keyword terms like: battery, thermal, motor, current, vibration, latency, or runbook."
+        )
+
+    top = hits[:3]
+    source_types = sorted({hit.source for hit in top})
+    source_label = " and ".join(source_types) if source_types else "knowledge base"
+    top_titles = "; ".join(hit.title for hit in top)
+    response = [
+        f"Found {len(hits)} relevant {'entry' if len(hits) == 1 else 'entries'} from {source_label}.",
+        f"Most relevant: {top_titles}.",
+    ]
+    if incident is not None:
+        response.append(
+            f"Incident {incident.incident_id} on {incident.device_id} is currently {incident.status}."
+        )
+    response.append("Review the citations below for exact excerpts and source references.")
+    return " ".join(response)
+
+
+def _build_action_checklist(incident: IncidentReport) -> list[str]:
+    """Build a practical checklist card from incident report details."""
+    checklist: list[str] = []
+    checklist.extend(incident.recommended_actions[:4])
+    checklist.extend(incident.verification.get("checks", [])[:2])
+    if not checklist:
+        checklist = ["Review latest telemetry and validate threshold configuration."]
+    return list(dict.fromkeys(checklist))
+
+
+def _extract_float(content: str, key: str) -> float | None:
+    pattern = rf"{key}\s*[:=]?\s*(-?\d+(?:\.\d+)?)"
+    match = re.search(pattern, content, flags=re.IGNORECASE)
+    return float(match.group(1)) if match else None
+
+
+def _extract_text(content: str, key: str) -> str | None:
+    pattern = rf"{key}\s*[:=]\s*([a-zA-Z0-9_\-]+)"
+    match = re.search(pattern, content, flags=re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def _try_report_incident_from_chat(
+    *,
+    content: str,
+    dependencies: AppDependencies,
+) -> tuple[str, str, str, dict[str, object]] | None:
+    """Handle hybrid incident reporting from natural language chat input."""
+    normalized = content.strip().lower()
+    if not normalized.startswith("report incident"):
+        return None
+
+    metric = _extract_text(content, "metric")
+    device_id = _extract_text(content, "device")
+    value = _extract_float(content, "value")
+    threshold = _extract_float(content, "threshold")
+
+    missing: list[str] = []
+    if metric is None:
+        missing.append("metric")
+    if device_id is None:
+        missing.append("device")
+    if value is None:
+        missing.append("value")
+    if threshold is None:
+        missing.append("threshold")
+
+    if missing:
+        missing_msg = ", ".join(missing)
+        return (
+            f"I can report this incident, but I still need: {missing_msg}. "
+            "Example: report incident metric=battery_temp_c device=robot-03 value=74.2 threshold=65",
+            "report_incident",
+            "error",
+            {"missing_fields": missing},
+        )
+
+    assert metric is not None
+    assert device_id is not None
+    assert value is not None
+    assert threshold is not None
+
+    severity = "high" if value > threshold else "medium"
+    event = TelemetryEvent(
+        event_id=f"evt_chat_{uuid4().hex[:10]}",
+        fleet_id="fleet-alpha",
+        device_id=device_id,
+        timestamp=datetime.now(timezone.utc),
+        metric=metric,
+        value=value,
+        threshold=threshold,
+        severity=severity,
+        tags=[metric.split("_")[0], "chat-reported"],
+    )
+    incident = _create_incident_from_event(event=event, dependencies=dependencies)
+    return (
+        f"Incident reported and orchestrated: {incident.incident_id} for {incident.device_id}.",
+        "report_incident",
+        "success",
+        {
+            "incident_id": incident.incident_id,
+            "status": incident.status,
+            "summary": incident.summary,
+        },
+    )
+
+
+def _handle_chat_action(
+    *,
+    content: str,
+    dependencies: AppDependencies,
+    session: ChatSession,
+) -> tuple[str, list[dict[str, object]], str | None, str | None, dict[str, object]]:
+    """Route explicit chat commands and default to retrieval-grounded Q&A."""
+    stripped = content.strip()
+    lowered = stripped.lower()
+
+    report_result = _try_report_incident_from_chat(content=stripped, dependencies=dependencies)
+    if report_result is not None:
+        message, action, status, payload = report_result
+        return message, [], action, status, payload
+
+    if lowered.startswith("/simulate"):
+        event = TelemetryEvent(
+            event_id=f"evt_sim_{uuid4().hex[:10]}",
+            fleet_id="fleet-alpha",
+            device_id="robot-03",
+            timestamp=datetime.now(timezone.utc),
+            metric="battery_temp_c",
+            value=74.2,
+            threshold=65.0,
+            severity="high",
+            tags=["battery", "thermal"],
+        )
+        incident = _create_incident_from_event(event=event, dependencies=dependencies)
+        action_hint = incident.recommended_actions[0] if incident.recommended_actions else "Review telemetry."
+        return (
+            f"Simulation complete. Incident {incident.incident_id} created for robot-03 "
+            f"(battery_temp_c = 74.2°C, threshold 65°C, severity: high). "
+            f"Status: {incident.status}. First recommended action: {action_hint}",
+            [],
+            "simulate",
+            "success",
+            {
+                "incident_id": incident.incident_id,
+                "device_id": incident.device_id,
+                "status": incident.status,
+                "confidence_score": incident.confidence_score,
+            },
+        )
+
+    if lowered.startswith("/list incidents"):
+        incidents = dependencies.repository.list_incidents()[:10]
+        if not incidents:
+            return (
+                "No incidents found yet. Run /simulate to generate a demo incident, "
+                "or report one with: report incident metric=... device=... value=... threshold=...",
+                [],
+                "list_incidents",
+                "success",
+                {"incidents": []},
+            )
+        open_count = sum(1 for i in incidents if i.status == "open")
+        return (
+            f"Showing {len(incidents)} recent incident{'s' if len(incidents) != 1 else ''} "
+            f"({open_count} open). Select one with /open <incident_id> or /checklist <incident_id>.",
+            [],
+            "list_incidents",
+            "success",
+            {
+                "incidents": [
+                    {
+                        "incident_id": item.incident_id,
+                        "status": item.status,
+                        "device_id": item.device_id,
+                        "summary": item.summary,
+                        "confidence_score": item.confidence_score,
+                    }
+                    for item in incidents
+                ]
+            },
+        )
+
+    if lowered.startswith("/open "):
+        incident_id = stripped.split(" ", 1)[1].strip()
+        incident = dependencies.repository.get_incident(incident_id)
+        if incident is None:
+            return (
+                f"Incident {incident_id} was not found. Use /list incidents to see available IDs.",
+                [],
+                "open_incident",
+                "error",
+                {"incident_id": incident_id},
+            )
+        hyp_hint = ", ".join(incident.root_cause_hypotheses[:2]) if incident.root_cause_hypotheses else "unknown"
+        return (
+            f"Incident {incident.incident_id} on {incident.device_id} is {incident.status}. "
+            f"{incident.summary} "
+            f"Likely causes: {hyp_hint}. "
+            f"Confidence: {incident.confidence_score:.0%}. "
+            "Use /checklist to see action steps.",
+            [],
+            "open_incident",
+            "success",
+            {
+                "incident_id": incident.incident_id,
+                "device_id": incident.device_id,
+                "status": incident.status,
+                "summary": incident.summary,
+                "confidence_score": incident.confidence_score,
+                "root_cause_hypotheses": incident.root_cause_hypotheses,
+                "recommended_actions": incident.recommended_actions,
+            },
+        )
+
+    if lowered.startswith("/status "):
+        parts = stripped.split()
+        if len(parts) != 3:
+            return (
+                "Usage: /status <incident_id> <open|acknowledged|resolved>",
+                [],
+                "update_status",
+                "error",
+                {},
+            )
+        _, incident_id, status = parts
+        if status not in {"open", "acknowledged", "resolved"}:
+            return (
+                "Status must be open, acknowledged, or resolved.",
+                [],
+                "update_status",
+                "error",
+                {},
+            )
+        updated = dependencies.repository.update_incident_status(incident_id, status)
+        if updated is None:
+            return (
+                f"Incident {incident_id} was not found.",
+                [],
+                "update_status",
+                "error",
+                {"incident_id": incident_id},
+            )
+        return (
+            f"Updated {updated.incident_id} to status {updated.status}.",
+            [],
+            "update_status",
+            "success",
+            {"incident_id": updated.incident_id, "status": updated.status},
+        )
+
+    if lowered.startswith("/checklist"):
+        incident_id = ""
+        if " " in stripped:
+            incident_id = stripped.split(" ", 1)[1].strip()
+        target_id = incident_id or (session.incident_id or "")
+        if not target_id:
+            return (
+                "Provide an incident ID or start a session tied to an incident.",
+                [],
+                "checklist",
+                "error",
+                {},
+            )
+        incident = dependencies.repository.get_incident(target_id)
+        if incident is None:
+            return (
+                f"Incident {target_id} was not found.",
+                [],
+                "checklist",
+                "error",
+                {"incident_id": target_id},
+            )
+        checklist = _build_action_checklist(incident)
+        return (
+            f"Action checklist for {target_id} ({incident.device_id}, {incident.status}). "
+            f"{len(checklist)} step{'s' if len(checklist) != 1 else ''} to resolve. "
+            "Mark each step complete as you work through the issue.",
+            [],
+            "checklist",
+            "success",
+            {"incident_id": target_id, "device_id": incident.device_id, "checklist": checklist},
+        )
+
+    incident = None
+    if session.incident_id:
+        incident = dependencies.repository.get_incident(session.incident_id)
+    documents = dependencies.repository.list_rag_documents()
+    hits = dependencies.retrieval_backend.search(query=stripped, documents=documents, limit=5)
+    citations = [_citation_from_hit(hit) for hit in hits]
+    answer = _compose_retrieval_answer(content=stripped, hits=hits, incident=incident)
+    source_counts: dict[str, int] = {}
+    for hit in hits:
+        source_counts[hit.source] = source_counts.get(hit.source, 0) + 1
+    return (
+        answer,
+        citations,
+        "rag_answer",
+        "success",
+        {
+            "hit_count": len(citations),
+            "source_counts": source_counts,
+            "top_documents": [hit.document_id for hit in hits[:3]],
+        },
+    )
 
 
 def _run_async_ingestion_job(
@@ -930,3 +1286,126 @@ def orchestrate_event(
 )
 def get_metrics(dependencies: AppDependencies = Depends(get_dependencies)) -> dict[str, float]:
     return dependencies.metrics.copy()
+
+
+@router.post(
+    "/v1/chat/sessions",
+    response_model=ChatSession,
+    tags=["Chat"],
+    summary="Create chat session",
+)
+def create_chat_session(
+    request: ChatSessionCreateRequest = Body(default=ChatSessionCreateRequest()),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> ChatSession:
+    session_id = f"chat_{uuid4().hex[:12]}"
+    payload = dependencies.repository.create_chat_session(
+        session_id=session_id,
+        incident_id=request.incident_id,
+    )
+    return _to_chat_session(payload)
+
+
+@router.get(
+    "/v1/chat/sessions",
+    response_model=list[ChatSession],
+    tags=["Chat"],
+    summary="List chat sessions",
+)
+def list_chat_sessions(
+    limit: int = Query(20, ge=1, le=200, description="Maximum sessions to return."),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> list[ChatSession]:
+    rows = dependencies.repository.list_chat_sessions(limit=limit)
+    return [_to_chat_session(row) for row in rows]
+
+
+@router.get(
+    "/v1/chat/sessions/{session_id}",
+    response_model=ChatConversation,
+    tags=["Chat"],
+    summary="Get chat conversation",
+)
+def get_chat_session(
+    session_id: str = Path(..., description="Chat session identifier."),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> ChatConversation:
+    session_payload = dependencies.repository.get_chat_session(session_id.strip())
+    if session_payload is None:
+        raise ResourceNotFoundError(
+            "Chat session not found.",
+            details={"session_id": session_id.strip()},
+        )
+    messages = dependencies.repository.list_chat_messages(session_id.strip())
+    return ChatConversation(
+        session=_to_chat_session(session_payload),
+        messages=[_to_chat_message(row) for row in messages],
+    )
+
+
+@router.post(
+    "/v1/chat/sessions/{session_id}/messages",
+    response_model=ChatConversation,
+    tags=["Chat"],
+    summary="Post chat message and get assistant response",
+)
+def post_chat_message(
+    session_id: str = Path(..., description="Chat session identifier."),
+    message: ChatMessageCreateRequest = Body(
+        ...,
+        openapi_examples={
+            "ask_rag": {
+                "summary": "Ask an operational question",
+                "value": CHAT_MESSAGE_EXAMPLE,
+            }
+        },
+    ),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> ChatConversation:
+    clean_session_id = session_id.strip()
+    session_payload = dependencies.repository.get_chat_session(clean_session_id)
+    if session_payload is None:
+        raise ResourceNotFoundError(
+            "Chat session not found.",
+            details={"session_id": clean_session_id},
+        )
+
+    dependencies.repository.insert_chat_message(
+        message_id=f"msg_{uuid4().hex[:14]}",
+        session_id=clean_session_id,
+        role="user",
+        content=message.content,
+    )
+
+    session = _to_chat_session(session_payload)
+    assistant_text, citations, action, action_status, action_payload = _handle_chat_action(
+        content=message.content,
+        dependencies=dependencies,
+        session=session,
+    )
+    dependencies.repository.insert_chat_message(
+        message_id=f"msg_{uuid4().hex[:14]}",
+        session_id=clean_session_id,
+        role="assistant",
+        content=assistant_text,
+        citations=citations,
+        action=action,
+        action_status=action_status,
+        action_payload=action_payload,
+    )
+
+    refreshed_session = dependencies.repository.get_chat_session(clean_session_id)
+    if refreshed_session is None:
+        raise ReadinessError("Failed to refresh chat session after message write.")
+    messages = dependencies.repository.list_chat_messages(clean_session_id)
+
+    dependencies.logger.debug(
+        "Chat message processed: session=%s action=%s status=%s",
+        clean_session_id,
+        action,
+        action_status,
+    )
+    return ChatConversation(
+        session=_to_chat_session(refreshed_session),
+        messages=[_to_chat_message(row) for row in messages],
+    )

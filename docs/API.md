@@ -203,6 +203,58 @@ Query parameters:
 - `query`: search text (required)
 - `limit`: max hits (default 5, min 1, max 50)
 
+## Chat
+
+### POST /v1/chat/sessions
+
+Create a persistent chat session.
+
+Request example:
+
+```json
+{
+  "incident_id": "inc_abc123"
+}
+```
+
+`incident_id` is optional. When provided, chat answers are scoped with incident context.
+
+### GET /v1/chat/sessions
+
+List recent chat sessions, ordered by update time.
+
+### GET /v1/chat/sessions/{session_id}
+
+Fetch one full conversation with session metadata and all messages.
+
+### POST /v1/chat/sessions/{session_id}/messages
+
+Post a user message and receive an updated conversation (user + assistant messages persisted).
+
+Request example:
+
+```json
+{
+  "content": "What runbooks apply to battery thermal drift?"
+}
+```
+
+Assistant messages can include:
+
+- `citations`: RAG-grounding references (document ID, source, score, excerpt)
+- `action`: command/action type
+- `action_status`: `success` or `error`
+- `action_payload`: structured action output for UI cards
+
+Supported command patterns in message content:
+
+- `report incident metric=<metric> device=<device_id> value=<n> threshold=<n>`
+- `/list incidents`
+- `/open <incident_id>`
+- `/status <incident_id> <open|acknowledged|resolved>`
+- `/checklist [incident_id]`
+- `/simulate`
+
 ## Orchestration
 
 ### POST /v1/orchestrate/event

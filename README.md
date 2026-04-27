@@ -72,6 +72,14 @@ Click **"Simulate thermal incident"** on the dashboard. The system will:
 5. Verify the plan (Verifier Agent).
 6. Generate a final incident report (Reporter Agent).
 
+### 6. Use Incident Chat
+
+Open `http://localhost:3000/chat` for a persistent operator chat workspace.
+
+- Ask RAG questions and inspect citations.
+- Report incidents with structured natural language.
+- Run operational commands such as `/list incidents`, `/open <incident_id>`, `/status <incident_id> acknowledged`, `/checklist`, and `/simulate`.
+
 ## Architecture
 
 ```

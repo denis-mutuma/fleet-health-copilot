@@ -64,6 +64,11 @@ export default async function IncidentDetailPage({
           status={incident.status}
         />
         <p>
+          <Link href={`/chat?incidentId=${encodeURIComponent(incident.incident_id)}`}>
+            Open chat for this incident
+          </Link>
+        </p>
+        <p>
           <Link href="/">Back to dashboard</Link>
         </p>
       </header>

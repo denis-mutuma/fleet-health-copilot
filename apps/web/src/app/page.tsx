@@ -61,6 +61,9 @@ export default async function HomePage() {
           reasoning, and report generation are provided by the orchestrator.
         </p>
         <div className="actions">
+          <Link href="/chat" className="secondary-button rag-link-button">
+            Open incident chat
+          </Link>
           <Link href="/rag" className="secondary-button rag-link-button">
             Manage RAG corpus
           </Link>

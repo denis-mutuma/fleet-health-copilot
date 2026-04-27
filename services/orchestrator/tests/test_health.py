@@ -680,6 +680,76 @@ def test_metrics_endpoint(tmp_path, monkeypatch) -> None:
     assert "events_ingested_total" in response.json()
 
 
+def test_chat_session_lifecycle_and_rag_citations(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    client.post(
+        "/v1/rag/documents",
+        json={
+            "document_id": "rb_battery_thermal_v2",
+            "source": "runbook",
+            "title": "Battery Thermal Drift Response",
+            "content": "Reduce duty cycle and inspect cooling lines for thermal drift incidents.",
+            "tags": ["battery", "thermal"],
+        },
+    )
+
+    created = client.post("/v1/chat/sessions", json={"incident_id": None})
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+
+    posted = client.post(
+        f"/v1/chat/sessions/{session_id}/messages",
+        json={"content": "What should I do for battery thermal drift?"},
+    )
+    assert posted.status_code == 200
+    conversation = posted.json()
+    assert conversation["session"]["session_id"] == session_id
+    assert len(conversation["messages"]) >= 2
+    assert conversation["messages"][-1]["role"] == "assistant"
+    assert len(conversation["messages"][-1]["citations"]) >= 1
+
+
+def test_chat_actions_update_status_and_simulate(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    created = client.post("/v1/chat/sessions", json={"incident_id": None})
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+
+    created_incident = client.post(
+        "/v1/orchestrate/event",
+        json={
+            "event_id": "evt_chat_action_1",
+            "fleet_id": "fleet-alpha",
+            "device_id": "robot-03",
+            "timestamp": "2026-04-24T08:00:00Z",
+            "metric": "battery_temp_c",
+            "value": 80.0,
+            "threshold": 65.0,
+            "severity": "high",
+            "tags": ["battery", "thermal"],
+        },
+    )
+    incident_id = created_incident.json()["incident_id"]
+
+    status_update = client.post(
+        f"/v1/chat/sessions/{session_id}/messages",
+        json={"content": f"/status {incident_id} acknowledged"},
+    )
+    assert status_update.status_code == 200
+    status_message = status_update.json()["messages"][-1]
+    assert status_message["action"] == "update_status"
+    assert status_message["action_status"] == "success"
+
+    simulate = client.post(
+        f"/v1/chat/sessions/{session_id}/messages",
+        json={"content": "/simulate"},
+    )
+    assert simulate.status_code == 200
+    simulate_message = simulate.json()["messages"][-1]
+    assert simulate_message["action"] == "simulate"
+    assert simulate_message["action_status"] == "success"
+
+
 def test_evaluate_pipeline_reports_confusion_metrics(tmp_path, monkeypatch) -> None:
     evaluate_pipeline = _load_evaluate_pipeline()
     events_file = tmp_path / "events.jsonl"

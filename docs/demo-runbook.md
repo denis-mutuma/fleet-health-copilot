@@ -63,6 +63,61 @@ Expected result:
 - Incident detail shows summary, hypotheses, recommended actions, confidence, agent trace, verification checks, latency, and evidence.
 - Evidence references retrieved runbooks or historical incidents, not synthetic fallback IDs.
 
+## Chat Demo Flow
+
+Open `http://localhost:3000/chat` and create a new session.
+
+Recommended script:
+
+1. Ask a retrieval question:
+
+```text
+What runbooks apply to battery thermal drift?
+```
+
+Expected: assistant response includes citations grouped by source.
+
+2. List incidents and open one:
+
+```text
+/list incidents
+/open <incident_id>
+```
+
+Expected: incident list card, then incident details summary with hypotheses/actions.
+
+3. Generate an action checklist:
+
+```text
+/checklist <incident_id>
+```
+
+Expected: checklist card with actionable steps.
+
+4. Update incident state:
+
+```text
+/status <incident_id> acknowledged
+```
+
+Expected: status update confirmation card.
+
+5. Report a new incident from chat:
+
+```text
+report incident metric=battery_temp_c device=robot-03 value=74.2 threshold=65
+```
+
+Expected: new incident creation confirmation with link to details.
+
+6. Trigger simulation from chat:
+
+```text
+/simulate
+```
+
+Expected: simulated incident created and returned as action payload.
+
 ## Evaluation Demo
 
 Run the evaluation helper:

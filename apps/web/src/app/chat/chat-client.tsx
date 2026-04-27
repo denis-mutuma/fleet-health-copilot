@@ -283,6 +283,16 @@ function sessionLabel(session: ChatSession, index: number): string {
   return `Session ${index + 1} · ${timeStr}`;
 }
 
+function sessionLastUpdated(session: ChatSession): string {
+  const date = new Date(session.updated_at);
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 export default function ChatClient() {
   const searchParams = useSearchParams();
   const incidentIdParam = searchParams.get("incidentId")?.trim() || "";
@@ -415,6 +425,24 @@ export default function ChatClient() {
           <span>{activeSession?.incident_id ? `Scoped to ${activeSession.incident_id}` : "General ops mode"}</span>
           <span>Citations grouped by source</span>
         </div>
+        <div className="context-strip" aria-label="Chat context">
+          <div className="context-item">
+            <span className="context-title">Mode</span>
+            <span className="context-value">
+              {activeSession?.incident_id ? "Incident-scoped" : "Fleet-wide operations"}
+            </span>
+          </div>
+          <div className="context-item">
+            <span className="context-title">Active session</span>
+            <span className="context-value">
+              {activeSession ? sessionLastUpdated(activeSession) : "No active session"}
+            </span>
+          </div>
+          <div className="context-item">
+            <span className="context-title">Shortcuts</span>
+            <span className="context-value">/list, /open, /status, /checklist, /simulate</span>
+          </div>
+        </div>
         <div className="actions action-group">
           <Link href="/" className="secondary-button rag-link-button">
             Back to dashboard
@@ -456,8 +484,11 @@ export default function ChatClient() {
                         });
                     }}
                   >
-                    <strong>{sessionLabel(session, idx)}</strong>
-                    <span className="muted">
+                    <span className="session-meta-row">
+                      <strong>{sessionLabel(session, idx)}</strong>
+                      <span className="session-time">{sessionLastUpdated(session)}</span>
+                    </span>
+                    <span className="session-preview">
                       {session.incident_id ? `Incident ${session.incident_id}` : "General ops"}
                     </span>
                   </button>

@@ -42,6 +42,14 @@ export default async function IncidentDetailPage({
 
   return (
     <main className="container page-grid">
+      <nav className="breadcrumb" aria-label="Breadcrumb">
+        <Link href="/">Operations</Link>
+        <span aria-hidden="true">/</span>
+        <span>Incident investigation</span>
+        <span aria-hidden="true">/</span>
+        <span className="mono" aria-current="page">{incident.incident_id}</span>
+      </nav>
+
       <header className="hero">
         <p className="eyebrow">Incident investigation</p>
         <h1>{incident.summary}</h1>

@@ -548,6 +548,55 @@ select:focus-visible {
   font-size: 0.9rem;
 }
 
+.context-strip {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 6px 0 0;
+}
+
+.context-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 0.72);
+}
+
+.context-title {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.context-value {
+  color: var(--muted-strong);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.breadcrumb a {
+  color: var(--muted-strong);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
 .timeline-list {
   display: grid;
   gap: 14px;
@@ -691,6 +740,24 @@ select:focus-visible {
   background: rgb(255 255 255 / 0.76);
   text-align: left;
   cursor: pointer;
+}
+
+.session-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.session-time {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.session-preview {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
 }
 
 .session-button.active {
@@ -1035,6 +1102,10 @@ select:focus-visible {
 
   .action-group-tight {
     gap: var(--space-2);
+  }
+
+  .context-strip {
+    grid-template-columns: 1fr;
   }
 }
 

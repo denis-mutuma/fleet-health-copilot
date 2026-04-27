@@ -1,14 +1,31 @@
+"""FastAPI route handlers for health, incident, and RAG operations."""
+
 import sqlite3
 from time import perf_counter
+from uuid import uuid4
 
-from fastapi import APIRouter, Body, Depends, Path, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Header, Path, Query, UploadFile
 
 from fleet_health_orchestrator.dependencies import AppDependencies, get_dependencies
-from fleet_health_orchestrator.exceptions import ReadinessError, ResourceNotFoundError
+from fleet_health_orchestrator.exceptions import InvalidRequestError, ReadinessError, ResourceNotFoundError
+from fleet_health_orchestrator.ingestion import (
+    build_chunk_documents,
+    chunk_text,
+    delete_documents_from_s3_vectors,
+    extract_text_from_bytes,
+    generate_document_id,
+    index_documents_to_s3_vectors,
+    is_supported_upload,
+)
 from fleet_health_orchestrator.models import (
     IncidentReport,
     IncidentStatusUpdate,
+    RagDeletionResponse,
     RagDocument,
+    RagDocumentFamily,
+    RagIngestionJob,
+    RagIngestionRequest,
+    RagIngestionResponse,
     RetrievalHit,
     TelemetryEvent,
 )
@@ -79,6 +96,7 @@ def _readiness(dependencies: AppDependencies) -> None:
 
 
 def _create_incident_from_event(event: TelemetryEvent, dependencies: AppDependencies) -> IncidentReport:
+    """Execute orchestration for one event, persist incident, and record latency metrics."""
     started_at = perf_counter()
     incident = dependencies.orchestrator.execute(
         event=event,
@@ -98,6 +116,150 @@ def _create_incident_from_event(event: TelemetryEvent, dependencies: AppDependen
         latency_ms,
     )
     return incident
+
+
+def _persist_and_optionally_index_documents(
+    *,
+    dependencies: AppDependencies,
+    documents: list[dict[str, object]],
+) -> int:
+    """Persist chunk documents and index vectors when the S3 Vectors backend is enabled."""
+    for document in documents:
+        dependencies.repository.insert_rag_document(
+            document_id=str(document["document_id"]),
+            source=str(document["source"]),
+            title=str(document["title"]),
+            content=str(document["content"]),
+            tags=list(document.get("tags", [])),
+        )
+
+    settings = dependencies.settings
+    if settings.retrieval_backend.strip().lower() != "s3vectors":
+        return 0
+
+    bucket = settings.s3_vectors_bucket.strip()
+    index = settings.s3_vectors_index.strip()
+    index_arn = settings.s3_vectors_index_arn.strip()
+    has_pair = bool(bucket and index)
+    if not index_arn and not has_pair:
+        raise InvalidRequestError(
+            "S3 Vectors backend is enabled but index configuration is missing.",
+            details={"expected": "S3_VECTORS_INDEX_ARN or S3_VECTORS_BUCKET+S3_VECTORS_INDEX"},
+        )
+
+    try:
+        return index_documents_to_s3_vectors(
+            documents=documents,
+            bucket=bucket,
+            index=index,
+            index_arn=index_arn,
+            embedding_dimension=settings.s3_vectors_embedding_dimension,
+            embedding_provider=settings.effective_embedding_provider,
+            embedding_model=settings.openai_embedding_model,
+            openai_api_key=settings.openai_api_key,
+            batch_size=settings.rag_index_batch_size,
+        )
+    except Exception as exc:
+        dependencies.logger.exception("S3 Vectors indexing failed")
+        raise ReadinessError(
+            "Failed to index uploaded documents in vector backend.",
+            details={"reason": str(exc)},
+        ) from exc
+
+
+def _ingest_document(
+    *,
+    dependencies: AppDependencies,
+    request: RagIngestionRequest,
+) -> RagIngestionResponse:
+    """Build chunks from a request, persist/index them, and return ingestion metadata."""
+    settings = dependencies.settings
+    document_id = request.document_id or generate_document_id(
+        filename=request.title,
+        title=request.title,
+        content=request.content,
+    )
+    chunks = chunk_text(
+        request.content,
+        chunk_size_chars=request.chunk_size_chars,
+        chunk_overlap_chars=request.chunk_overlap_chars,
+    )
+    if not chunks:
+        raise InvalidRequestError("Document content is empty after normalization.")
+
+    documents = build_chunk_documents(
+        document_id=document_id,
+        source=request.source,
+        title=request.title,
+        tags=request.tags,
+        chunks=chunks,
+    )
+    indexed_chunks = _persist_and_optionally_index_documents(dependencies=dependencies, documents=documents)
+    dependencies.logger.info(
+        "RAG document ingested: id=%s chunks=%d indexed=%d backend=%s",
+        document_id,
+        len(documents),
+        indexed_chunks,
+        settings.retrieval_backend,
+    )
+
+    return RagIngestionResponse(
+        document_id=document_id,
+        source=request.source,
+        title=request.title,
+        chunk_count=len(documents),
+        indexed_chunks=indexed_chunks,
+        retrieval_backend=settings.retrieval_backend,
+        embedding_provider=settings.effective_embedding_provider,
+        embedding_model=settings.openai_embedding_model,
+        llm_model=settings.llm_report_model,
+    )
+
+
+def _base_document_id(document_id: str) -> str:
+    """Return the stable document family ID from a chunk identifier."""
+    return document_id.split("#chunk-", 1)[0]
+
+
+def _normalize_chunk_title(title: str) -> str:
+    """Remove chunk suffix from stored titles for grouped list responses."""
+    marker = " (chunk "
+    idx = title.rfind(marker)
+    if idx > 0 and title.endswith(")"):
+        return title[:idx]
+    return title
+
+
+def _to_ingestion_job(payload: dict[str, object]) -> RagIngestionJob:
+    """Validate and normalize repository payload into API job model."""
+    return RagIngestionJob.model_validate(payload)
+
+
+def _run_async_ingestion_job(
+    *,
+    job_id: str,
+    dependencies: AppDependencies,
+    request: RagIngestionRequest,
+) -> None:
+    """Execute queued ingestion and transition job status through running/succeeded/failed."""
+    dependencies.repository.update_rag_ingestion_job(job_id=job_id, status="running")
+    try:
+        result = _ingest_document(dependencies=dependencies, request=request)
+        dependencies.repository.update_rag_ingestion_job(
+            job_id=job_id,
+            status="succeeded",
+            document_id=result.document_id,
+            chunk_count=result.chunk_count,
+            indexed_chunks=result.indexed_chunks,
+            error_message=None,
+        )
+    except Exception as exc:
+        dependencies.repository.update_rag_ingestion_job(
+            job_id=job_id,
+            status="failed",
+            error_message=str(exc)[:2000],
+        )
+        dependencies.logger.exception("Async RAG ingestion failed for job %s", job_id)
 
 
 @router.get(
@@ -358,10 +520,10 @@ def update_incident(
 
 @router.post(
     "/v1/rag/documents",
-    response_model=RagDocument,
+    response_model=RagIngestionResponse,
     tags=["RAG"],
-    summary="Upsert RAG document",
-    response_description="Stored RAG document.",
+    summary="Ingest RAG document",
+    response_description="Stored and chunked RAG document.",
 )
 def upsert_rag_document(
     document: RagDocument = Body(
@@ -374,16 +536,325 @@ def upsert_rag_document(
         },
     ),
     dependencies: AppDependencies = Depends(get_dependencies),
-) -> RagDocument:
-    dependencies.repository.insert_rag_document(
+) -> RagIngestionResponse:
+    request = RagIngestionRequest(
         document_id=document.document_id,
         source=document.source,
         title=document.title,
         content=document.content,
         tags=document.tags,
+        chunk_size_chars=dependencies.settings.rag_chunk_size_chars,
+        chunk_overlap_chars=dependencies.settings.rag_chunk_overlap_chars,
     )
-    dependencies.logger.debug("RAG document upserted: %s (%s)", document.document_id, document.source)
-    return document
+    return _ingest_document(dependencies=dependencies, request=request)
+
+
+@router.get(
+    "/v1/rag/documents",
+    response_model=list[RagDocumentFamily],
+    tags=["RAG"],
+    summary="List RAG document families",
+    response_description="Chunk-aware RAG corpus grouped by base document ID.",
+)
+def list_rag_documents(
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> list[RagDocumentFamily]:
+    # API returns document families, even though storage is chunk-level.
+    grouped: dict[str, RagDocumentFamily] = {}
+    for row in dependencies.repository.list_rag_documents():
+        row_id = str(row.get("document_id", "")).strip()
+        if not row_id:
+            continue
+        base_id = _base_document_id(row_id)
+        if base_id not in grouped:
+            grouped[base_id] = RagDocumentFamily(
+                document_id=base_id,
+                source=str(row.get("source", "manual")),
+                title=_normalize_chunk_title(str(row.get("title", base_id))),
+                tags=list(row.get("tags", [])),
+                chunk_count=1,
+            )
+            continue
+        grouped[base_id].chunk_count += 1
+
+    return sorted(grouped.values(), key=lambda item: item.document_id, reverse=True)
+
+
+@router.delete(
+    "/v1/rag/documents/{document_id}",
+    response_model=RagDeletionResponse,
+    tags=["RAG"],
+    summary="Delete RAG document family",
+    response_description="Deleted all chunks for the base RAG document ID.",
+    responses={
+        404: {
+            "description": "Document was not found.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "RAG document not found.",
+                        "error": {
+                            "code": "resource_not_found",
+                            "message": "RAG document not found.",
+                            "details": {"document_id": "doc_missing"},
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
+def delete_rag_document(
+    document_id: str = Path(..., description="Base RAG document identifier."),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> RagDeletionResponse:
+    cleaned = document_id.strip()
+
+    all_documents = dependencies.repository.list_rag_documents()
+    keys = [
+        str(row.get("document_id", "")).strip()
+        for row in all_documents
+        if str(row.get("document_id", "")).strip() == cleaned
+        or str(row.get("document_id", "")).strip().startswith(f"{cleaned}#chunk-")
+    ]
+    if not keys:
+        raise ResourceNotFoundError(
+            "RAG document not found.",
+            details={"document_id": cleaned},
+        )
+
+    settings = dependencies.settings
+    if settings.retrieval_backend.strip().lower() == "s3vectors":
+        bucket = settings.s3_vectors_bucket.strip()
+        index = settings.s3_vectors_index.strip()
+        index_arn = settings.s3_vectors_index_arn.strip()
+        has_pair = bool(bucket and index)
+        if not index_arn and not has_pair:
+            raise InvalidRequestError(
+                "S3 Vectors backend is enabled but index configuration is missing.",
+                details={"expected": "S3_VECTORS_INDEX_ARN or S3_VECTORS_BUCKET+S3_VECTORS_INDEX"},
+            )
+
+        try:
+            delete_documents_from_s3_vectors(
+                document_keys=keys,
+                bucket=bucket,
+                index=index,
+                index_arn=index_arn,
+                batch_size=settings.rag_index_batch_size,
+            )
+        except Exception as exc:
+            dependencies.logger.exception("S3 Vectors delete failed")
+            raise ReadinessError(
+                "Failed to delete vectors for RAG document family.",
+                details={"reason": str(exc), "document_id": cleaned},
+            ) from exc
+
+    deleted = dependencies.repository.delete_rag_document_family(cleaned)
+    if deleted == 0:
+        raise ResourceNotFoundError(
+            "RAG document not found.",
+            details={"document_id": cleaned},
+        )
+
+    dependencies.logger.info("Deleted RAG document family: %s (chunks=%d)", cleaned, deleted)
+    return RagDeletionResponse(document_id=cleaned, deleted_chunks=deleted)
+
+
+@router.post(
+    "/v1/rag/documents/upload",
+    response_model=RagIngestionResponse,
+    tags=["RAG"],
+    summary="Upload and ingest RAG document",
+    response_description="Stored, chunked, and indexed document from uploaded file.",
+)
+async def upload_rag_document(
+    file: UploadFile = File(..., description="Document file (.txt, .md, .json, .jsonl, .csv, .log)."),
+    source: str = Form("manual", description="Document source type: runbook, incident, manual, note."),
+    title: str = Form("", description="Optional title override; defaults to filename."),
+    tags: str = Form("", description="Comma-separated tags."),
+    document_id: str = Form("", description="Optional stable document ID."),
+    chunk_size_chars: int | None = Form(None, description="Optional chunk size override."),
+    chunk_overlap_chars: int | None = Form(None, description="Optional chunk overlap override."),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> RagIngestionResponse:
+    filename = (file.filename or "uploaded-document").strip()
+    if not is_supported_upload(filename):
+        raise InvalidRequestError(
+            "Unsupported file type for document ingestion.",
+            details={"filename": filename},
+        )
+
+    raw = await file.read()
+    if len(raw) > dependencies.settings.rag_upload_max_bytes:
+        raise InvalidRequestError(
+            "Uploaded file exceeds maximum allowed size.",
+            details={
+                "max_bytes": dependencies.settings.rag_upload_max_bytes,
+                "received_bytes": len(raw),
+            },
+        )
+
+    text = extract_text_from_bytes(filename, raw)
+    cleaned_title = title.strip() or filename
+    tag_values = [value.strip().lower() for value in tags.split(",") if value.strip()]
+
+    request = RagIngestionRequest(
+        source=source.strip().lower() or "manual",
+        title=cleaned_title,
+        content=text,
+        tags=tag_values,
+        document_id=document_id.strip() or None,
+        chunk_size_chars=chunk_size_chars or dependencies.settings.rag_chunk_size_chars,
+        chunk_overlap_chars=chunk_overlap_chars
+        if chunk_overlap_chars is not None
+        else dependencies.settings.rag_chunk_overlap_chars,
+    )
+    if request.document_id is None:
+        request.document_id = generate_document_id(
+            filename=filename,
+            title=request.title,
+            content=request.content,
+        )
+
+    return _ingest_document(dependencies=dependencies, request=request)
+
+
+@router.post(
+    "/v1/rag/documents/upload/async",
+    response_model=RagIngestionJob,
+    tags=["RAG"],
+    summary="Upload and ingest RAG document asynchronously",
+    response_description="Queued RAG ingestion job state.",
+)
+async def upload_rag_document_async(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(..., description="Document file (.txt, .md, .markdown, .json, .jsonl, .csv, .log, .html, .htm, .pdf, .docx)."),
+    source: str = Form("manual", description="Document source type: runbook, incident, manual, note."),
+    title: str = Form("", description="Optional title override; defaults to filename."),
+    tags: str = Form("", description="Comma-separated tags."),
+    document_id: str = Form("", description="Optional stable document ID."),
+    chunk_size_chars: int | None = Form(None, description="Optional chunk size override."),
+    chunk_overlap_chars: int | None = Form(None, description="Optional chunk overlap override."),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> RagIngestionJob:
+    normalized_key = (idempotency_key or "").strip() or None
+    if normalized_key is not None:
+        # Idempotency key lets clients safely retry upload requests.
+        existing = dependencies.repository.get_rag_ingestion_job_by_idempotency_key(normalized_key)
+        if existing is not None:
+            return _to_ingestion_job(existing)
+
+    filename = (file.filename or "uploaded-document").strip()
+    if not is_supported_upload(filename):
+        raise InvalidRequestError(
+            "Unsupported file type for document ingestion.",
+            details={"filename": filename},
+        )
+
+    raw = await file.read()
+    if len(raw) > dependencies.settings.rag_upload_max_bytes:
+        raise InvalidRequestError(
+            "Uploaded file exceeds maximum allowed size.",
+            details={
+                "max_bytes": dependencies.settings.rag_upload_max_bytes,
+                "received_bytes": len(raw),
+            },
+        )
+
+    text = extract_text_from_bytes(filename, raw)
+    cleaned_title = title.strip() or filename
+    tag_values = [value.strip().lower() for value in tags.split(",") if value.strip()]
+
+    request = RagIngestionRequest(
+        source=source.strip().lower() or "manual",
+        title=cleaned_title,
+        content=text,
+        tags=tag_values,
+        document_id=document_id.strip() or None,
+        chunk_size_chars=chunk_size_chars or dependencies.settings.rag_chunk_size_chars,
+        chunk_overlap_chars=chunk_overlap_chars
+        if chunk_overlap_chars is not None
+        else dependencies.settings.rag_chunk_overlap_chars,
+    )
+    if request.document_id is None:
+        request.document_id = generate_document_id(
+            filename=filename,
+            title=request.title,
+            content=request.content,
+        )
+
+    job_id = f"job_{uuid4().hex[:16]}"
+    dependencies.repository.insert_rag_ingestion_job(
+        job_id=job_id,
+        source=request.source,
+        title=request.title,
+        tags=request.tags,
+        filename=filename,
+        idempotency_key=normalized_key,
+    )
+
+    background_tasks.add_task(
+        _run_async_ingestion_job,
+        job_id=job_id,
+        dependencies=dependencies,
+        request=request,
+    )
+    created = dependencies.repository.get_rag_ingestion_job(job_id)
+    if created is None:
+        raise ReadinessError("Failed to persist ingestion job.")
+    return _to_ingestion_job(created)
+
+
+@router.get(
+    "/v1/rag/ingestion-jobs",
+    response_model=list[RagIngestionJob],
+    tags=["RAG"],
+    summary="List recent RAG ingestion jobs",
+)
+def list_rag_ingestion_jobs(
+    limit: int = Query(20, ge=1, le=200, description="Maximum jobs to return."),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> list[RagIngestionJob]:
+    rows = dependencies.repository.list_rag_ingestion_jobs(limit=limit)
+    return [_to_ingestion_job(row) for row in rows]
+
+
+@router.get(
+    "/v1/rag/ingestion-jobs/{job_id}",
+    response_model=RagIngestionJob,
+    tags=["RAG"],
+    summary="Get ingestion job status",
+    responses={
+        404: {
+            "description": "Ingestion job was not found.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "RAG ingestion job not found.",
+                        "error": {
+                            "code": "resource_not_found",
+                            "message": "RAG ingestion job not found.",
+                            "details": {"job_id": "job_missing"},
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
+def get_rag_ingestion_job(
+    job_id: str = Path(..., description="Ingestion job identifier."),
+    dependencies: AppDependencies = Depends(get_dependencies),
+) -> RagIngestionJob:
+    row = dependencies.repository.get_rag_ingestion_job(job_id.strip())
+    if row is None:
+        raise ResourceNotFoundError(
+            "RAG ingestion job not found.",
+            details={"job_id": job_id.strip()},
+        )
+    return _to_ingestion_job(row)
 
 
 @router.get(

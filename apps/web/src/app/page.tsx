@@ -7,6 +7,7 @@ import {
   UserButton
 } from "@clerk/nextjs";
 import SimulateIncidentButton from "./components/simulate-incident-button";
+import RagUploadForm from "./components/rag-upload-form";
 import { listIncidents, type IncidentReport } from "@/lib/incidents";
 
 function statusLabel(status: IncidentReport["status"]): string {
@@ -59,6 +60,11 @@ export default async function HomePage() {
           MVP view for authenticated operators. Live ingestion, multi-agent
           reasoning, and report generation are provided by the orchestrator.
         </p>
+        <div className="actions">
+          <Link href="/rag" className="secondary-button rag-link-button">
+            Manage RAG corpus
+          </Link>
+        </div>
         <SimulateIncidentButton />
       </header>
 
@@ -114,6 +120,8 @@ export default async function HomePage() {
           </ul>
         )}
       </section>
+
+      <RagUploadForm />
     </main>
   );
 }

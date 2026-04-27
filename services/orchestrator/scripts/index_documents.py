@@ -25,7 +25,7 @@ def main() -> None:
     parser.add_argument(
         "--documents-file",
         type=Path,
-        default=Path("services/orchestrator/data/runbooks.jsonl")
+        default=Path("services/orchestrator/data/runbooks_detailed.jsonl")
     )
     parser.add_argument(
         "--base-url",

@@ -126,7 +126,7 @@ Returns `404` when missing.
 
 ### POST /v1/rag/documents
 
-Upsert a RAG document.
+Ingest a raw document payload. The service chunks the content, stores chunks in `rag_documents`, and optionally indexes vectors when `RETRIEVAL_BACKEND=s3vectors`.
 
 Request example:
 
@@ -139,6 +139,60 @@ Request example:
   "tags": ["battery", "thermal"]
 }
 ```
+
+Response includes chunk/index metadata:
+
+```json
+{
+  "document_id": "rb_battery_thermal_v2",
+  "source": "runbook",
+  "title": "Battery Thermal Drift Response",
+  "chunk_count": 3,
+  "indexed_chunks": 3,
+  "retrieval_backend": "s3vectors",
+  "embedding_provider": "openai",
+  "embedding_model": "text-embedding-3-large",
+  "llm_model": "gpt-5.4-mini"
+}
+```
+
+### GET /v1/rag/documents
+
+List RAG document families grouped by base `document_id`.
+
+### DELETE /v1/rag/documents/{document_id}
+
+Delete a full document family, including all chunks and vector rows when S3 Vectors is enabled.
+
+### POST /v1/rag/documents/upload
+
+Upload a file for ingestion (`multipart/form-data`).
+
+Supported file types: `.txt`, `.md`, `.markdown`, `.json`, `.jsonl`, `.csv`, `.log`, `.html`, `.htm`, `.pdf`, `.docx`.
+
+Form fields:
+
+- `file` (required)
+- `source` (optional, default `manual`)
+- `title` (optional)
+- `tags` (optional, comma-separated)
+- `document_id` (optional)
+- `chunk_size_chars` (optional)
+- `chunk_overlap_chars` (optional)
+
+### POST /v1/rag/documents/upload/async
+
+Queue a background ingestion job and return job state immediately.
+
+Supports header `Idempotency-Key` to safely deduplicate retries.
+
+### GET /v1/rag/ingestion-jobs
+
+List recent ingestion jobs.
+
+### GET /v1/rag/ingestion-jobs/{job_id}
+
+Fetch one ingestion job status (`pending`, `running`, `succeeded`, `failed`).
 
 ### GET /v1/rag/search
 

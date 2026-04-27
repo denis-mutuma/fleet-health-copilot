@@ -170,14 +170,23 @@ Optional orchestrator retrieval settings:
 - `FLEET_RETRIEVAL_BACKEND=lexical` keeps the local default lexical token search.
 - `FLEET_RETRIEVAL_BACKEND=s3vectors` calls Amazon S3 Vectors `query_vectors` through boto3 (`s3vectors` client).
 - Either `FLEET_S3_VECTORS_BUCKET` and `FLEET_S3_VECTORS_INDEX`, or `FLEET_S3_VECTORS_INDEX_ARN`, is required when `s3vectors` is selected.
-- `FLEET_S3_VECTORS_EMBEDDING_DIM` defaults to `384` and must match the vector index dimension.
+- `FLEET_S3_VECTORS_EMBEDDING_DIM` defaults to `3072` and must match the vector index dimension.
 - `FLEET_S3_VECTORS_QUERY_VECTOR_JSON` is optional: a JSON array of floats used as the query vector for every search (same length as the embedding dim). Use it for integration checks against a known index; otherwise the service derives a deterministic pseudo-vector from the query string for API shape only—**production** queries should use the same embedding model as ingestion.
 
 IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or filters are returned (the backend sets `returnMetadata=true`). For indexing scripts, also grant `s3vectors:PutVectors`.
 
-**Query embeddings** (`FLEET_EMBEDDING_PROVIDER`, default `hash`): `hash` (deterministic, no extra deps), `openai` (`FLEET_OPENAI_API_KEY`, `FLEET_OPENAI_EMBEDDING_MODEL`), `http` (`FLEET_EMBEDDING_HTTP_URL` returning JSON `{"embedding":[...]}`), or `sentence_transformers` (install `pip install -e "services/orchestrator[embeddings]"` and set `FLEET_SENTENCE_TRANSFORMER_MODEL`). The embedding dimension must match the S3 Vectors index.
+**Query embeddings** (`FLEET_EMBEDDING_PROVIDER`, default `hash`): `hash` (deterministic, no extra deps), `openai` (`FLEET_OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`), `http` (`FLEET_EMBEDDING_HTTP_URL` returning JSON `{"embedding":[...]}`), or `sentence_transformers` (install `pip install -e "services/orchestrator[embeddings]"` and set `FLEET_SENTENCE_TRANSFORMER_MODEL`). For production, use `openai` with `OPENAI_EMBEDDING_MODEL=text-embedding-3-large`. The embedding dimension must match the S3 Vectors index.
 
-**Optional OpenAI assist** (requires `FLEET_OPENAI_API_KEY`): set `FLEET_OPENAI_REPORT_REFINE=true` to rewrite the one-line incident summary (`llm.py`). Set `FLEET_OPENAI_DIAGNOSIS_ENRICH=true` to add up to two extra diagnosis hypotheses grounded only in retrieval titles (`FLEET_OPENAI_DIAGNOSIS_MODEL` defaults to `gpt-4o-mini`). Recommended actions still come from deterministic planner + verifier rules.
+**OpenAI LLM calls** (requires `FLEET_OPENAI_API_KEY`): incident summary refinement, diagnosis generation/enrichment, and action planning use OpenAI Responses API calls with traces, defaulting to `gpt-5.4-mini` (`LLM_REPORT_MODEL`, `LLM_DIAGNOSIS_MODEL`).
+
+**RAG ingestion API**:
+
+- `POST /v1/rag/documents` ingests raw text payloads and chunks them for retrieval.
+- `POST /v1/rag/documents/upload` accepts `.txt`, `.md`, `.markdown`, `.json`, `.jsonl`, `.csv`, `.log`, `.html`, `.htm`, `.pdf`, and `.docx`, chunks automatically, persists chunks, and indexes to S3 Vectors when `FLEET_RETRIEVAL_BACKEND=s3vectors`.
+- `POST /v1/rag/documents/upload/async` queues ingestion and returns a job record immediately.
+- `GET /v1/rag/ingestion-jobs/{job_id}` retrieves status (`pending`, `running`, `succeeded`, `failed`).
+- `GET /v1/rag/ingestion-jobs` lists recent jobs.
+- Chunking controls: `RAG_CHUNK_SIZE_CHARS`, `RAG_CHUNK_OVERLAP_CHARS`, `RAG_UPLOAD_MAX_BYTES`, `RAG_INDEX_BATCH_SIZE`.
 
 **Index vectors from SQLite** (after runbooks are in the DB):
 
@@ -210,7 +219,11 @@ With the orchestrator running, index sample runbooks and historical incidents:
 
 ```bash
 .venv/bin/python services/orchestrator/scripts/index_documents.py
+# optional explicit file
+.venv/bin/python services/orchestrator/scripts/index_documents.py --documents-file services/orchestrator/data/runbooks_detailed.jsonl
 ```
+
+The default seed file now uses a richer production-style runbook corpus at [services/orchestrator/data/runbooks_detailed.jsonl](services/orchestrator/data/runbooks_detailed.jsonl).
 
 Replay sample telemetry events:
 

@@ -7,18 +7,23 @@ import httpx
 
 
 def _expected_runbook(event: dict[str, object]) -> str | None:
+    # This maps event signals to the canonical detailed runbook IDs used for retrieval quality checks.
     tags = set(event.get("tags", []))
     metric = str(event.get("metric", ""))
     if "network" in tags or "latency" in tags or "comms" in tags or "network" in metric:
-        return "rb_network_latency_v1"
+        return "rb_network_latency_wave_response_v3"
     if "vibration" in tags or "vibration" in metric or "mechanical" in tags:
-        return "rb_vibration_mechanical_v1"
+        return "rb_wheel_slip_traction_playbook_v2"
     if "cpu" in tags or "cpu" in metric or str(metric).startswith("cpu_"):
-        return "rb_cpu_throttle_v1"
+        return "rb_cpu_thermal_throttle_procedure_v2"
     if "battery" in tags or "thermal" in tags or "battery" in metric:
-        return "rb_battery_thermal_v2"
+        return "rb_battery_thermal_containment_v4"
     if "motor" in tags or "current" in tags or "motor" in metric:
-        return "rb_motor_current_v1"
+        return "rb_motor_current_fault_isolation_v3"
+    if "disk" in tags or "storage" in tags or "disk" in metric:
+        return "rb_disk_io_latency_mitigation_v2"
+    if "sensor" in tags or "drift" in tags or "sensor" in metric:
+        return "rb_sensor_drift_validation_v3"
     return None
 
 

@@ -15,6 +15,10 @@ from fleet_health_orchestrator.models import IncidentReport, RetrievalHit, Telem
 from fleet_health_orchestrator.rag import LexicalRetrievalBackend, RetrievalBackend
 
 
+def _base_document_id(document_id: str) -> str:
+    return document_id.split("#chunk-", 1)[0]
+
+
 def _cited_runbook_id_from_action(action: str) -> str | None:
     if not action.startswith("Follow "):
         return None
@@ -94,7 +98,11 @@ class DiagnosisAgent:
 @dataclass
 class PlannerAgent:
     def plan(self, event: TelemetryEvent, hits: list[RetrievalHit]) -> PlanResult:
-        runbook_hits = [hit for hit in hits if hit.source == "runbook"]
+        runbook_hits = [
+            hit.model_copy(update={"document_id": _base_document_id(hit.document_id)})
+            for hit in hits
+            if hit.source == "runbook"
+        ]
         with openai_trace("fleet-health.agent.planner"):
             actions = generate_action_plan(event, runbook_hits)
 
@@ -116,7 +124,7 @@ class PlannerAgent:
 class VerifierAgent:
     def verify(self, plan: PlanResult, hits: list[RetrievalHit]) -> VerificationResult:
         has_runbook = any(hit.source == "runbook" for hit in hits)
-        runbook_ids = {hit.document_id for hit in hits if hit.source == "runbook"}
+        runbook_ids = {_base_document_id(hit.document_id) for hit in hits if hit.source == "runbook"}
         checks = [
             "anomaly confirmed by MonitorAgent",
             "recommendations limited to operator review or maintenance actions"
@@ -160,7 +168,7 @@ class ReporterAgent:
         verification: VerificationResult,
         latency_ms: float
     ) -> IncidentReport:
-        runbooks = [hit.document_id for hit in hits if hit.source == "runbook"]
+        runbooks = list(dict.fromkeys(_base_document_id(hit.document_id) for hit in hits if hit.source == "runbook"))
         matched_incidents = [hit.document_id for hit in hits if hit.source == "incident"]
         summary = f"{event.metric} exceeded threshold on {event.device_id}."
         summary = refine_incident_summary(event, summary) or summary

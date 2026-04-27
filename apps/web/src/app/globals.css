@@ -265,6 +265,83 @@ body {
   text-transform: capitalize;
 }
 
+.upload-card {
+  margin-top: 24px;
+  padding: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 18px 45px rgb(32 33 35 / 0.06);
+}
+
+.upload-form {
+  display: grid;
+  gap: 12px;
+}
+
+.upload-inline-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.upload-field {
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+  gap: 6px;
+}
+
+.upload-field input,
+.upload-field select {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.upload-result {
+  color: var(--success);
+  margin-top: 12px;
+}
+
+.rag-link-button {
+  align-items: center;
+  display: inline-flex;
+  text-decoration: none;
+}
+
+.rag-table-wrapper {
+  overflow-x: auto;
+}
+
+.rag-table {
+  border-collapse: collapse;
+  min-width: 840px;
+  width: 100%;
+}
+
+.rag-table th,
+.rag-table td {
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.rag-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.rag-delete-button {
+  border-radius: 10px;
+  padding: 6px 12px;
+}
+
 @media (max-width: 720px) {
   .stats-grid {
     grid-template-columns: 1fr;
@@ -275,6 +352,10 @@ body {
   }
 
   .evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-inline-fields {
     grid-template-columns: 1fr;
   }
 }

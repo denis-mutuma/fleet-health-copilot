@@ -42,7 +42,7 @@ def main() -> int:
     parser.add_argument(
         "--runbooks-file",
         type=Path,
-        default=REPO / "services/orchestrator/data/runbooks.jsonl"
+        default=REPO / "services/orchestrator/data/runbooks_detailed.jsonl"
     )
     parser.add_argument(
         "--budget-ms",

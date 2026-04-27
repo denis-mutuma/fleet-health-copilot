@@ -1,6 +1,6 @@
 # Architecture
 
-Fleet Health Copilot is a software-only incident operations platform for simulated robotics and IoT fleets. It demonstrates telemetry ingestion, deterministic multi-agent orchestration, retrieval-augmented context, MCP tool access, and operator-facing incident reports.
+Fleet Health Copilot is a software-only incident operations platform for robotics and IoT fleets. It includes telemetry ingestion, multi-agent orchestration, retrieval-augmented context, MCP tool access, and operator-facing incident reports.
 
 ## System View
 
@@ -24,7 +24,7 @@ Primary components:
 - `apps/web`: Clerk-protected Next.js dashboard for incident list/detail views and simulation.
 - `services/orchestrator`: FastAPI service for telemetry ingestion, RAG search, incident orchestration, persistence, and metrics.
 - `services/mcp-*`: MCP tool servers for telemetry, retrieval, and incident actions.
-- `services/orchestrator/data`: JSONL seed data for demo events, runbooks, and historical incidents.
+- `services/orchestrator/data`: JSONL seed data for sample events and detailed runbooks.
 - `packages/contracts`: JSON Schemas for event and incident report shapes.
 
 ## Runtime Flow
@@ -85,6 +85,13 @@ Retrieval is behind a small backend interface:
 - `LexicalRetrievalBackend` is the local default and ranks documents by token overlap.
 - `S3VectorsRetrievalBackend` is opt-in and calls AWS S3 Vectors `query_vectors` (boto3 `s3vectors` client), mapping vector metadata plus the SQLite-backed document list into `RetrievalHit` rows. Query embeddings are pluggable (`FLEET_EMBEDDING_PROVIDER`: hash, OpenAI, HTTP, or optional sentence-transformers); `scripts/index_s3_vectors.py` upserts SQLite RAG rows into an index with the same embedder. See [s3-vectors-operations.md](s3-vectors-operations.md) for IAM and rollout order.
 - `FLEET_RETRIEVAL_BACKEND=lexical` keeps local development dependency-light; set `FLEET_RETRIEVAL_BACKEND=s3vectors` with bucket/index or index ARN when running against AWS.
+
+RAG ingestion API surface:
+
+- `POST /v1/rag/documents` ingests text payloads and stores chunked rows.
+- `POST /v1/rag/documents/upload` ingests uploaded files (`txt`, `md`, `json`, `html`, `pdf`, `docx`).
+- `POST /v1/rag/documents/upload/async` queues async ingestion jobs.
+- `GET /v1/rag/ingestion-jobs` and `GET /v1/rag/ingestion-jobs/{job_id}` expose ingestion job state.
 
 ## MCP Tool Layer
 

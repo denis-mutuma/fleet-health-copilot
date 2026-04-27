@@ -19,6 +19,34 @@ except ImportError:  # pragma: no cover - older SDK fallback
         return nullcontext()
 
 
+SUMMARY_SYSTEM_PROMPT = (
+    "You rewrite fleet incident summaries for on-call operators. "
+    "Output exactly one sentence under 160 characters. "
+    "Keep it factual, include the metric and affected device, and avoid speculation."
+)
+
+ENRICH_DIAGNOSIS_SYSTEM_PROMPT = (
+    "You assist fleet incident triage. Using ONLY the provided evidence list, "
+    "propose up to two additional root-cause hypotheses. "
+    "Each item must be short, concrete, and under 120 characters. "
+    "Return ONLY a JSON array of strings; use [] when evidence is insufficient."
+)
+
+GENERATE_DIAGNOSIS_SYSTEM_PROMPT = (
+    "You are a fleet operations analyst. Based only on the telemetry event and retrieval evidence, "
+    "return a JSON array with up to 4 short root-cause hypotheses. "
+    "No markdown, no explanation, no fabricated facts. Return [] when evidence is weak."
+)
+
+ACTION_PLAN_SYSTEM_PROMPT = (
+    "You write safe operator actions for industrial fleet incidents. "
+    "Return ONLY a JSON array with 1 to 4 action strings. "
+    "Each action must be conservative and directly executable by an operator. "
+    "For runbook-grounded actions, start with 'Follow <runbook_id>:'. "
+    "Do not output any item that cannot be grounded in the provided runbooks."
+)
+
+
 def _llm_enabled(flag_name: str) -> bool:
     flag_value = os.getenv(flag_name, "").strip().lower()
     if flag_value:
@@ -59,6 +87,45 @@ def _extract_message_content(response: Any) -> str | None:
     return None
 
 
+def _extract_response_text(response: Any) -> str | None:
+    # Prefer top-level output_text from the Responses API when present.
+    output_text = getattr(response, "output_text", None)
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    output = getattr(response, "output", None)
+    if not isinstance(output, list):
+        return None
+
+    parts: list[str] = []
+    for item in output:
+        content = getattr(item, "content", None)
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            text = getattr(block, "text", None)
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+
+    return "\n".join(parts) if parts else None
+
+
+def _resolve_model(
+    *,
+    explicit: str | None,
+    primary_env: str,
+    legacy_env: str,
+    default: str,
+) -> str:
+    if explicit is not None and explicit.strip():
+        return explicit.strip()
+    return (
+        os.getenv(primary_env, "").strip()
+        or os.getenv(legacy_env, "").strip()
+        or default
+    )
+
+
 def _chat_completion(
     *,
     trace_name: str,
@@ -74,6 +141,21 @@ def _chat_completion(
         return None
 
     with openai_trace(trace_name):
+        # Use Responses API first for tracing and forward-compatible OpenAI behavior.
+        if hasattr(client, "responses"):
+            response = client.responses.create(
+                model=model,
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+                input=[
+                    {"role": "system", "content": [{"type": "input_text", "text": system}]},
+                    {"role": "user", "content": [{"type": "input_text", "text": user}]},
+                ],
+            )
+            text = _extract_response_text(response)
+            if text is not None:
+                return text
+
         response = client.chat.completions.create(
             model=model,
             temperature=temperature,
@@ -83,7 +165,7 @@ def _chat_completion(
                 {"role": "user", "content": user},
             ],
         )
-    return _extract_message_content(response)
+        return _extract_message_content(response)
 
 
 def refine_incident_summary(
@@ -101,12 +183,14 @@ def refine_incident_summary(
     if not key:
         return None
 
-    m = (model if model is not None else os.getenv("FLEET_OPENAI_REPORT_MODEL", "gpt-4o-mini")).strip()
-
-    system = (
-        "You rewrite fleet incident summaries in one concise sentence for operators. "
-        "Stay factual; do not invent causes or actions."
+    m = _resolve_model(
+        explicit=model,
+        primary_env="LLM_REPORT_MODEL",
+        legacy_env="FLEET_OPENAI_REPORT_MODEL",
+        default="gpt-5.4-mini",
     )
+
+    system = SUMMARY_SYSTEM_PROMPT
     user = (
         f"device={event.device_id} metric={event.metric} value={event.value} "
         f"threshold={event.threshold} severity={event.severity}\n"
@@ -165,15 +249,15 @@ def enrich_diagnosis_hypotheses(
     if not key or not hits:
         return []
 
-    m = (model if model is not None else os.getenv("FLEET_OPENAI_DIAGNOSIS_MODEL", "gpt-4o-mini")).strip()
+    m = _resolve_model(
+        explicit=model,
+        primary_env="LLM_DIAGNOSIS_MODEL",
+        legacy_env="FLEET_OPENAI_DIAGNOSIS_MODEL",
+        default="gpt-5.4-mini",
+    )
 
     evidence = [{"document_id": h.document_id, "title": h.title, "source": h.source} for h in hits[:6]]
-    system = (
-        "You assist fleet incident triage. Using ONLY the JSON evidence list, propose at most "
-        "two additional short hypothesis phrases (each under 120 characters). "
-        "Do not invent device-specific facts not supported by evidence titles. "
-        "Respond with ONLY a JSON array of strings (e.g. [\"...\"]). Use [] if nothing is justified."
-    )
+    system = ENRICH_DIAGNOSIS_SYSTEM_PROMPT
     user = json.dumps(
         {
             "device_id": event.device_id,
@@ -214,7 +298,12 @@ def generate_diagnosis_hypotheses(
     if not key or not hits:
         return []
 
-    m = (model if model is not None else os.getenv("FLEET_OPENAI_DIAGNOSIS_MODEL", "gpt-4o-mini")).strip()
+    m = _resolve_model(
+        explicit=model,
+        primary_env="LLM_DIAGNOSIS_MODEL",
+        legacy_env="FLEET_OPENAI_DIAGNOSIS_MODEL",
+        default="gpt-5.4-mini",
+    )
     evidence = [
         {
             "document_id": hit.document_id,
@@ -224,11 +313,7 @@ def generate_diagnosis_hypotheses(
         }
         for hit in hits[:6]
     ]
-    system = (
-        "You are a fleet operations analyst. Based only on the telemetry event and retrieval evidence, "
-        "return a JSON array with up to 4 short root-cause hypothesis phrases. "
-        "Do not invent causes not supported by the evidence. Use [] if the evidence is insufficient."
-    )
+    system = GENERATE_DIAGNOSIS_SYSTEM_PROMPT
     user = json.dumps(
         {
             "event": {
@@ -274,7 +359,12 @@ def generate_action_plan(
     if not key or not runbook_hits:
         return []
 
-    m = (model if model is not None else os.getenv("FLEET_OPENAI_REPORT_MODEL", "gpt-4o-mini")).strip()
+    m = _resolve_model(
+        explicit=model,
+        primary_env="LLM_REPORT_MODEL",
+        legacy_env="FLEET_OPENAI_REPORT_MODEL",
+        default="gpt-5.4-mini",
+    )
     runbooks = [
         {
             "document_id": hit.document_id,
@@ -283,10 +373,7 @@ def generate_action_plan(
         }
         for hit in runbook_hits[:4]
     ]
-    system = (
-        "You write safe operator actions for industrial fleet incidents. Return ONLY a JSON array of 1 to 4 action strings. "
-        "Each action must be concrete, conservative, and if based on a runbook must start with 'Follow <runbook_id>:'."
-    )
+    system = ACTION_PLAN_SYSTEM_PROMPT
     user = json.dumps(
         {
             "event": {

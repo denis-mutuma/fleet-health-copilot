@@ -4,7 +4,7 @@
 
 Fleet Health Copilot is a software-only multi-agent operations platform for robotics and IoT fleets. It ingests telemetry events, detects anomalous device behavior, retrieves runbook and incident-history context, and generates evidence-grounded incident reports for authenticated operators.
 
-The project is designed as a capstone artifact rather than a chatbot. It demonstrates system design across a web UI, orchestration API, persistence layer, retrieval backend, MCP tool layer, Docker runtime, CI quality gates, and repeatable evaluation.
+The project demonstrates system design across a web UI, orchestration API, persistence layer, retrieval backend, MCP tool layer, Docker runtime, CI quality gates, and repeatable evaluation.
 
 ## Problem Statement
 
@@ -21,7 +21,7 @@ Fleet Health Copilot addresses this by turning telemetry threshold crossings int
 
 Primary goals:
 
-- Build a working end-to-end demo from telemetry event to incident report.
+- Build a working end-to-end incident workflow from telemetry event to evidence-grounded report.
 - Use multiple specialized agents with distinct responsibilities.
 - Add retrieval-augmented context over runbooks and incident history.
 - Expose operational capabilities through MCP tool servers.
@@ -44,7 +44,7 @@ The current system includes:
 - `services/mcp-telemetry`: MCP tool server for querying telemetry events.
 - `services/mcp-retrieval`: MCP tool server for searching operational context.
 - `services/mcp-incidents`: MCP tool server for creating and reading incident reports.
-- `services/orchestrator/data`: JSONL seed data for demo runbooks, incident history, and telemetry events.
+- `services/orchestrator/data`: JSONL seed data for detailed runbooks and telemetry events.
 - `.github/workflows/deploy-aws.yml`: Production deployment workflow.
 - `infra/terraform`: AWS environment scaffold for production deployment, including CloudFront, WAF, API Gateway, ECS, and PostgreSQL.
 
@@ -61,16 +61,17 @@ The agent workflow is deterministic by design so the capstone demo remains expla
 | Verifier Agent | Validate report safety and grounding | Confirms actions exist and flags missing runbook evidence |
 | Reporter Agent | Produce the incident report | Adds confidence, trace, verification, latency, actions, and evidence |
 
-This keeps responsibilities separated while leaving room for future LLM-backed diagnosis, planning, and verification agents.
+This keeps responsibilities separated while allowing OpenAI-backed diagnosis, planning, and summary refinement where configured.
 
 ## Retrieval Design
 
-Retrieval uses a backend interface:
+Retrieval and ingestion use a backend interface:
 
 - `LexicalRetrievalBackend` is the local default.
-- `S3VectorsRetrievalBackend` is opt-in and implements `query_vectors` against Amazon S3 Vectors, with lexical fallback as the default for laptop demos.
+- `S3VectorsRetrievalBackend` is opt-in and implements `query_vectors` against Amazon S3 Vectors.
+- Upload ingestion supports chunking and indexing via `POST /v1/rag/documents/upload` and `POST /v1/rag/documents/upload/async`.
 
-This split keeps the MVP runnable without cloud dependencies while making the storage/retrieval boundary explicit.
+This split keeps local development runnable without cloud dependencies while making the storage/retrieval boundary explicit.
 
 ## MCP Design
 
@@ -145,7 +146,7 @@ Known remaining gaps:
 
 - S3 Vectors **ANN quality** still depends on using the same **`FLEET_EMBEDDING_PROVIDER`** (e.g. `openai`, `http`, `sentence_transformers`) and dimension for both [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) and live queries; the default `hash` provider is deterministic only (the API logs a warning when `s3vectors` + hash). See [s3-vectors-operations.md](s3-vectors-operations.md).
 - Deploys are automated through `.github/workflows/deploy-aws.yml` for `main` (prod), including Terraform apply and ECR image publishing. Environment secrets and networking inputs (VPC/subnets) still need to be provided in the `prod` GitHub Environment; Terraform now provisions PostgreSQL, API Gateway, CloudFront, and WAF as part of the production path.
-- Agents remain **deterministic for planning and verification**; optional OpenAI **summary refine** and **diagnosis enrichment** exist behind env flags ([`llm.py`](../services/orchestrator/src/fleet_health_orchestrator/llm.py)); there is no LLM-authored action list outside verifier rules.
+- Agent outputs support OpenAI Responses API calls for summary refinement, diagnosis generation, and action planning (`gpt-5.4-mini` by default), while verifier constraints still enforce conservative and grounded actions.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
 
 ## Capstone Requirement Mapping

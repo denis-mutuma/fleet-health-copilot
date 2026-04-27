@@ -150,9 +150,8 @@ If the user wants the best possible capstone, recommend:
 **Fleet Health Copilot with multi-agent orchestration, RAG, MCP tools, and cloud deployment.**
 
 ## other things
-- i want to use aws as the cloud provider, clerk for authentication, terraform and github actions
-- i want to keep GitHub Actions simple and production-focused unless a clear non-prod workflow is necessary
-- i want to keep the project simple. the code should be code short, simple, clear and consice
-- use uv environment, nextjs, docker
+- i want to use aws as the cloud provider, clerk for authentication, terraform, github actions and other cloud services
+- i want to keep the project professional. the code should be simple, clear and consice
+- use uv environment, nextjs, docker and other technologies
 - use aws s3vectors
 - i want the ui to have the theme of openai website

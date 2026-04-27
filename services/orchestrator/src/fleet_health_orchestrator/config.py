@@ -91,7 +91,7 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("S3_VECTORS_INDEX_ARN", "FLEET_S3_VECTORS_INDEX_ARN"),
     )
     s3_vectors_embedding_dimension: int = Field(
-        default=384,
+        default=3072,
         description="Embedding dimension (must match index and embedding model)",
         validation_alias=AliasChoices(
             "S3_VECTORS_EMBEDDING_DIMENSION",
@@ -133,20 +133,50 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("LLM_DIAGNOSIS_ENRICH_ENABLED", "FLEET_OPENAI_DIAGNOSIS_ENRICH"),
     )
     llm_report_model: str = Field(
-        default="gpt-4o-mini",
+        default="gpt-5.4-mini",
         description="OpenAI model for report refinement",
         validation_alias=AliasChoices("LLM_REPORT_MODEL", "FLEET_OPENAI_REPORT_MODEL"),
     )
     llm_diagnosis_model: str = Field(
-        default="gpt-4o-mini",
+        default="gpt-5.4-mini",
         description="OpenAI model for diagnosis enrichment",
         validation_alias=AliasChoices("LLM_DIAGNOSIS_MODEL", "FLEET_OPENAI_DIAGNOSIS_MODEL"),
     )
 
     openai_embedding_model: str = Field(
-        default="text-embedding-3-small",
+        default="text-embedding-3-large",
         description="OpenAI embedding model for retrieval and indexing",
         validation_alias=AliasChoices("OPENAI_EMBEDDING_MODEL", "FLEET_OPENAI_EMBEDDING_MODEL"),
+    )
+
+    # === RAG Ingestion ===
+    rag_chunk_size_chars: int = Field(
+        default=1200,
+        ge=200,
+        le=20000,
+        description="Default chunk size for uploaded RAG documents (characters).",
+        validation_alias=AliasChoices("RAG_CHUNK_SIZE_CHARS", "FLEET_RAG_CHUNK_SIZE_CHARS"),
+    )
+    rag_chunk_overlap_chars: int = Field(
+        default=200,
+        ge=0,
+        le=5000,
+        description="Chunk overlap for uploaded RAG documents (characters).",
+        validation_alias=AliasChoices("RAG_CHUNK_OVERLAP_CHARS", "FLEET_RAG_CHUNK_OVERLAP_CHARS"),
+    )
+    rag_upload_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        ge=1024,
+        le=100 * 1024 * 1024,
+        description="Maximum document upload size in bytes.",
+        validation_alias=AliasChoices("RAG_UPLOAD_MAX_BYTES", "FLEET_RAG_UPLOAD_MAX_BYTES"),
+    )
+    rag_index_batch_size: int = Field(
+        default=50,
+        ge=1,
+        le=200,
+        description="Max chunk vectors per S3 Vectors put_vectors call.",
+        validation_alias=AliasChoices("RAG_INDEX_BATCH_SIZE", "FLEET_RAG_INDEX_BATCH_SIZE"),
     )
 
     # === Logging Configuration ===

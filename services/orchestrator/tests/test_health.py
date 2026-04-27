@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from fleet_health_orchestrator.agents import PlanResult, VerifierAgent
 from fleet_health_orchestrator.embeddings import create_query_embedder
+from fleet_health_orchestrator.ingestion import delete_documents_from_s3_vectors, extract_text_from_bytes
 from fleet_health_orchestrator.models import RetrievalHit
 from fleet_health_orchestrator.rag import (
     LexicalRetrievalBackend,
@@ -75,7 +76,7 @@ def test_create_query_embedder_uses_openai_sdk(monkeypatch: pytest.MonkeyPatch) 
             self.embeddings = SimpleNamespace(create=self._create)
 
         def _create(self, *, model: str, input: str) -> object:
-            assert model == "text-embedding-3-small"
+            assert model == "text-embedding-3-large"
             assert input == "battery thermal drift"
             return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3, 0.4])])
 
@@ -85,7 +86,7 @@ def test_create_query_embedder_uses_openai_sdk(monkeypatch: pytest.MonkeyPatch) 
         4,
         provider="openai",
         openai_api_key="sk-test",
-        openai_model="text-embedding-3-small",
+        openai_model="text-embedding-3-large",
     )
 
     assert embed("battery thermal drift") == [0.1, 0.2, 0.3, 0.4]
@@ -317,8 +318,159 @@ def test_rag_index_and_search(tmp_path, monkeypatch) -> None:
     search_response = client.get("/v1/rag/search", params={"query": "battery thermal drift"})
 
     assert upsert_response.status_code == 200
+    assert upsert_response.json()["chunk_count"] >= 1
     assert search_response.status_code == 200
-    assert search_response.json()[0]["document_id"] == "rb_battery_thermal_v2"
+    assert search_response.json()[0]["document_id"].startswith("rb_battery_thermal_v2")
+
+
+def test_rag_upload_document_endpoint(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    content = "Battery thermal drift requires reduced duty cycle and cooling inspection. " * 60
+
+    response = client.post(
+        "/v1/rag/documents/upload",
+        data={
+            "source": "runbook",
+            "tags": "battery,thermal,operations",
+            "chunk_size_chars": "400",
+            "chunk_overlap_chars": "80",
+        },
+        files={"file": ("runbook.md", content, "text/markdown")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["chunk_count"] > 1
+    assert payload["indexed_chunks"] == 0
+    assert payload["embedding_model"] == "text-embedding-3-large"
+
+
+def test_rag_upload_document_async_and_status(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    content = "Battery thermal drift playbook section. " * 80
+
+    create = client.post(
+        "/v1/rag/documents/upload/async",
+        data={
+            "source": "runbook",
+            "tags": "battery,thermal",
+            "chunk_size_chars": "500",
+            "chunk_overlap_chars": "100",
+        },
+        files={"file": ("async-runbook.md", content, "text/markdown")},
+        headers={"Idempotency-Key": "idem-rag-1"},
+    )
+    assert create.status_code == 200
+    job = create.json()
+    assert job["job_id"].startswith("job_")
+
+    fetched = client.get(f"/v1/rag/ingestion-jobs/{job['job_id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] in ("pending", "running", "succeeded")
+
+    again = client.post(
+        "/v1/rag/documents/upload/async",
+        data={"source": "runbook"},
+        files={"file": ("async-runbook.md", content, "text/markdown")},
+        headers={"Idempotency-Key": "idem-rag-1"},
+    )
+    assert again.status_code == 200
+    assert again.json()["job_id"] == job["job_id"]
+
+
+def test_extract_text_from_html_bytes() -> None:
+    html = b"<html><body><h1>Thermal</h1><p>Battery drift mitigation steps.</p></body></html>"
+    extracted = extract_text_from_bytes("runbook.html", html)
+    assert "Thermal" in extracted
+    assert "Battery drift mitigation steps." in extracted
+
+
+def test_rag_document_families_listing(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+
+    first = client.post(
+        "/v1/rag/documents",
+        json={
+            "document_id": "rb_battery_thermal_v2",
+            "source": "runbook",
+            "title": "Battery Thermal Drift Response",
+            "content": "thermal " * 900,
+            "tags": ["battery", "thermal"],
+        },
+    )
+    second = client.post(
+        "/v1/rag/documents",
+        json={
+            "document_id": "rb_motor_current_v1",
+            "source": "runbook",
+            "title": "Motor Current Spike Triage",
+            "content": "motor current " * 300,
+            "tags": ["motor", "current"],
+        },
+    )
+    listing = client.get("/v1/rag/documents")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert listing.status_code == 200
+    payload = listing.json()
+    assert any(item["document_id"] == "rb_battery_thermal_v2" and item["chunk_count"] >= 2 for item in payload)
+    assert any(item["document_id"] == "rb_motor_current_v1" and item["chunk_count"] >= 1 for item in payload)
+
+
+def test_rag_document_family_delete(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+
+    created = client.post(
+        "/v1/rag/documents",
+        json={
+            "document_id": "rb_delete_me",
+            "source": "runbook",
+            "title": "Delete me",
+            "content": "delete " * 900,
+            "tags": ["cleanup"],
+        },
+    )
+    deleted = client.delete("/v1/rag/documents/rb_delete_me")
+    listing = client.get("/v1/rag/documents")
+
+    assert created.status_code == 200
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted_chunks"] >= 1
+    assert all(item["document_id"] != "rb_delete_me" for item in listing.json())
+
+
+def test_rag_document_family_delete_404(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+    response = client.delete("/v1/rag/documents/doc_missing")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "RAG document not found."
+
+
+def test_delete_documents_from_s3_vectors_batches(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeClient:
+        def delete_vectors(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    monkeypatch.setattr("fleet_health_orchestrator.ingestion.boto3.client", lambda _: FakeClient())
+
+    deleted = delete_documents_from_s3_vectors(
+        document_keys=["doc-1", "doc-2", "doc-3"],
+        bucket="bucket-a",
+        index="index-a",
+        index_arn="",
+        batch_size=2,
+    )
+
+    assert deleted == 3
+    assert len(calls) == 2
+    assert calls[0]["vectorBucketName"] == "bucket-a"
+    assert calls[0]["indexName"] == "index-a"
+    assert calls[0]["keys"] == ["doc-1", "doc-2"]
+    assert calls[1]["keys"] == ["doc-3"]
 
 
 def test_orchestration_endpoint(tmp_path, monkeypatch) -> None:
@@ -652,13 +804,13 @@ def test_retrieval_reciprocal_rank_helper() -> None:
 def test_expected_runbook_vibration() -> None:
     evaluate_pipeline = _load_evaluate_pipeline()
     event = {"tags": ["vibration", "mechanical"], "metric": "vibration_rms"}
-    assert evaluate_pipeline._expected_runbook(event) == "rb_vibration_mechanical_v1"
+    assert evaluate_pipeline._expected_runbook(event) == "rb_wheel_slip_traction_playbook_v2"
 
 
 def test_expected_runbook_cpu() -> None:
     evaluate_pipeline = _load_evaluate_pipeline()
     event = {"tags": ["cpu", "thermal"], "metric": "cpu_temp_c"}
-    assert evaluate_pipeline._expected_runbook(event) == "rb_cpu_throttle_v1"
+    assert evaluate_pipeline._expected_runbook(event) == "rb_cpu_thermal_throttle_procedure_v2"
 
 
 def test_verifier_rejects_citations_outside_retrieval() -> None:
@@ -693,7 +845,7 @@ def test_openai_embedding_provider_calls_api(monkeypatch: pytest.MonkeyPatch) ->
             self.embeddings = SimpleNamespace(create=self._create)
 
         def _create(self, *, model: str, input: str) -> object:
-            assert model == "text-embedding-3-small"
+            assert model == "text-embedding-3-large"
             assert input == "hello"
             return SimpleNamespace(data=[SimpleNamespace(embedding=[0.25, 0.75])])
 
@@ -702,6 +854,6 @@ def test_openai_embedding_provider_calls_api(monkeypatch: pytest.MonkeyPatch) ->
         2,
         provider="openai",
         openai_api_key="sk-test",
-        openai_model="text-embedding-3-small"
+        openai_model="text-embedding-3-large"
     )
     assert embed("hello") == [0.25, 0.75]

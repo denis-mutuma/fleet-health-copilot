@@ -115,7 +115,9 @@ def create_query_embedder(
     oa_model = (
         openai_model
         if openai_model is not None
-        else os.getenv("FLEET_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        else os.getenv("OPENAI_EMBEDDING_MODEL")
+        or os.getenv("FLEET_OPENAI_EMBEDDING_MODEL")
+        or "text-embedding-3-large"
     )
     st_model = (
         sentence_transformer_model

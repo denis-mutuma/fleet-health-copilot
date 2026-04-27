@@ -1,3 +1,5 @@
+"""MCP tools for telemetry and quick device health lookups."""
+
 import os
 from typing import Any
 
@@ -6,12 +8,19 @@ import httpx
 DEFAULT_ORCHESTRATOR_URL = "http://127.0.0.1:8000"
 
 
+def _orchestrator_base_url() -> str:
+    """Resolve orchestrator base URL from env with a safe local default."""
+    return os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
+
+
 def query_latest_events(
     device_id: str, base_url: str = DEFAULT_ORCHESTRATOR_URL, limit: int = 20
 ) -> dict[str, Any]:
+    """Return recent events for one device from the orchestrator event stream."""
     response = httpx.get(f"{base_url.rstrip('/')}/v1/events", timeout=10.0)
     response.raise_for_status()
     events = response.json()
+    # MCP tool contracts are device-centric, so filter server response in-process.
     filtered = [event for event in events if event["device_id"] == device_id][:limit]
     return {"device_id": device_id, "events": filtered}
 
@@ -19,6 +28,7 @@ def query_latest_events(
 def lookup_device_status(
     device_id: str, base_url: str = DEFAULT_ORCHESTRATOR_URL
 ) -> dict[str, Any]:
+    """Compute a simple nominal/anomalous health snapshot from the latest event."""
     events = query_latest_events(device_id=device_id, base_url=base_url, limit=1)["events"]
     if not events:
         return {"device_id": device_id, "status": "unknown", "latest_event": None}
@@ -33,6 +43,7 @@ def lookup_device_status(
 
 
 def create_mcp_server() -> Any:
+    """Create and register MCP tools for telemetry workflows."""
     try:
         from mcp.server.fastmcp import FastMCP
     except ImportError as error:
@@ -48,7 +59,7 @@ def create_mcp_server() -> Any:
         """Query recent telemetry events for a device through the orchestrator API."""
         return query_latest_events(
             device_id=device_id,
-            base_url=os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL),
+            base_url=_orchestrator_base_url(),
             limit=limit
         )
 
@@ -57,13 +68,14 @@ def create_mcp_server() -> Any:
         """Return a simple device health status from the latest telemetry event."""
         return lookup_device_status(
             device_id=device_id,
-            base_url=os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
+            base_url=_orchestrator_base_url()
         )
 
     return server
 
 
 def run_server() -> None:
+    """Entrypoint used by the package script (`mcp-telemetry`)."""
     create_mcp_server().run()
 
 

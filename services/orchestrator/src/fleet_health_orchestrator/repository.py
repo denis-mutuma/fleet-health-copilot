@@ -1,10 +1,17 @@
+"""Persistence layer for telemetry, incidents, RAG documents, and ingestion jobs."""
+
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fleet_health_orchestrator.models import IncidentReport, TelemetryEvent
+
+
+def _utc_now_iso() -> str:
+    """Return a timezone-aware UTC timestamp in ISO-8601 format."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 class FleetRepository:
@@ -20,6 +27,7 @@ class FleetRepository:
 
     @contextmanager
     def _connect(self):
+        """Yield a DB connection and handle commit/rollback consistently."""
         if self._use_postgres:
             import psycopg
             from psycopg.rows import dict_row
@@ -39,9 +47,11 @@ class FleetRepository:
             connection.close()
 
     def _sql(self, sqlite_query: str, postgres_query: str) -> str:
+        """Select backend-specific SQL text for SQLite or PostgreSQL."""
         return postgres_query if self._use_postgres else sqlite_query
 
     def _init_db(self) -> None:
+        """Create and evolve repository tables required by current API behavior."""
         with self._connect() as connection:
             connection.execute(
                 """
@@ -110,6 +120,54 @@ class FleetRepository:
                 )
                 """
             )
+
+            connection.execute(
+                self._sql(
+                    """
+                    CREATE TABLE IF NOT EXISTS rag_ingestion_jobs (
+                        job_id TEXT PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        tags_json TEXT NOT NULL,
+                        filename TEXT NOT NULL,
+                        idempotency_key TEXT,
+                        document_id TEXT,
+                        chunk_count INTEGER NOT NULL DEFAULT 0,
+                        indexed_chunks INTEGER NOT NULL DEFAULT 0,
+                        error_message TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """,
+                    """
+                    CREATE TABLE IF NOT EXISTS rag_ingestion_jobs (
+                        job_id TEXT PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        tags_json TEXT NOT NULL,
+                        filename TEXT NOT NULL,
+                        idempotency_key TEXT,
+                        document_id TEXT,
+                        chunk_count INTEGER NOT NULL DEFAULT 0,
+                        indexed_chunks INTEGER NOT NULL DEFAULT 0,
+                        error_message TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """,
+                )
+            )
+
+            if self._use_postgres:
+                connection.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_ingestion_jobs_idempotency_key ON rag_ingestion_jobs(idempotency_key)"
+                )
+            else:
+                connection.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_ingestion_jobs_idempotency_key ON rag_ingestion_jobs(idempotency_key)"
+                )
 
     def _incident_from_row(self, row: sqlite3.Row) -> IncidentReport:
         return IncidentReport(
@@ -368,6 +426,214 @@ class FleetRepository:
                 "title": row["title"],
                 "content": row["content"],
                 "tags": json.loads(row["tags_json"])
+            }
+            for row in rows
+        ]
+
+    def delete_rag_document_family(self, document_id: str) -> int:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                self._sql(
+                    """
+                    DELETE FROM rag_documents
+                    WHERE document_id = ? OR document_id LIKE ?
+                    """,
+                    """
+                    DELETE FROM rag_documents
+                    WHERE document_id = %s OR document_id LIKE %s
+                    """,
+                ),
+                (document_id, f"{document_id}#chunk-%"),
+            )
+
+        return int(cursor.rowcount)
+
+    def insert_rag_ingestion_job(
+        self,
+        *,
+        job_id: str,
+        source: str,
+        title: str,
+        tags: list[str],
+        filename: str,
+        idempotency_key: str | None,
+    ) -> None:
+        now = _utc_now_iso()
+        with self._connect() as connection:
+            connection.execute(
+                self._sql(
+                    """
+                    INSERT INTO rag_ingestion_jobs
+                    (job_id, status, source, title, tags_json, filename, idempotency_key, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    """
+                    INSERT INTO rag_ingestion_jobs
+                    (job_id, status, source, title, tags_json, filename, idempotency_key, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                ),
+                (
+                    job_id,
+                    "pending",
+                    source,
+                    title,
+                    json.dumps(tags),
+                    filename,
+                    idempotency_key,
+                    now,
+                    now,
+                ),
+            )
+
+    def update_rag_ingestion_job(
+        self,
+        *,
+        job_id: str,
+        status: str,
+        document_id: str | None = None,
+        chunk_count: int | None = None,
+        indexed_chunks: int | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        now = _utc_now_iso()
+        with self._connect() as connection:
+            connection.execute(
+                self._sql(
+                    """
+                    UPDATE rag_ingestion_jobs
+                    SET status = ?,
+                        document_id = COALESCE(?, document_id),
+                        chunk_count = COALESCE(?, chunk_count),
+                        indexed_chunks = COALESCE(?, indexed_chunks),
+                        error_message = ?,
+                        updated_at = ?
+                    WHERE job_id = ?
+                    """,
+                    """
+                    UPDATE rag_ingestion_jobs
+                    SET status = %s,
+                        document_id = COALESCE(%s, document_id),
+                        chunk_count = COALESCE(%s, chunk_count),
+                        indexed_chunks = COALESCE(%s, indexed_chunks),
+                        error_message = %s,
+                        updated_at = %s
+                    WHERE job_id = %s
+                    """,
+                ),
+                (
+                    status,
+                    document_id,
+                    chunk_count,
+                    indexed_chunks,
+                    error_message,
+                    now,
+                    job_id,
+                ),
+            )
+
+    def get_rag_ingestion_job(self, job_id: str) -> dict[str, object] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                self._sql(
+                    """
+                    SELECT job_id, status, source, title, tags_json, filename, idempotency_key,
+                           document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                    FROM rag_ingestion_jobs
+                    WHERE job_id = ?
+                    """,
+                    """
+                    SELECT job_id, status, source, title, tags_json, filename, idempotency_key,
+                           document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                    FROM rag_ingestion_jobs
+                    WHERE job_id = %s
+                    """,
+                ),
+                (job_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return {
+            "job_id": row["job_id"],
+            "status": row["status"],
+            "source": row["source"],
+            "title": row["title"],
+            "tags": json.loads(row["tags_json"]),
+            "filename": row["filename"],
+            "idempotency_key": row["idempotency_key"],
+            "document_id": row["document_id"],
+            "chunk_count": int(row["chunk_count"]),
+            "indexed_chunks": int(row["indexed_chunks"]),
+            "error_message": row["error_message"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def get_rag_ingestion_job_by_idempotency_key(
+        self,
+        idempotency_key: str,
+    ) -> dict[str, object] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                self._sql(
+                    """
+                    SELECT job_id
+                    FROM rag_ingestion_jobs
+                    WHERE idempotency_key = ?
+                    """,
+                    """
+                    SELECT job_id
+                    FROM rag_ingestion_jobs
+                    WHERE idempotency_key = %s
+                    """,
+                ),
+                (idempotency_key,),
+            ).fetchone()
+
+        if row is None:
+            return None
+        return self.get_rag_ingestion_job(str(row["job_id"]))
+
+    def list_rag_ingestion_jobs(self, limit: int = 20) -> list[dict[str, object]]:
+        capped_limit = max(1, min(limit, 200))
+        with self._connect() as connection:
+            rows = connection.execute(
+                self._sql(
+                    """
+                    SELECT job_id, status, source, title, tags_json, filename, idempotency_key,
+                           document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                    FROM rag_ingestion_jobs
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    """
+                    SELECT job_id, status, source, title, tags_json, filename, idempotency_key,
+                           document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                    FROM rag_ingestion_jobs
+                    ORDER BY updated_at DESC
+                    LIMIT %s
+                    """,
+                ),
+                (capped_limit,),
+            ).fetchall()
+
+        return [
+            {
+                "job_id": row["job_id"],
+                "status": row["status"],
+                "source": row["source"],
+                "title": row["title"],
+                "tags": json.loads(row["tags_json"]),
+                "filename": row["filename"],
+                "idempotency_key": row["idempotency_key"],
+                "document_id": row["document_id"],
+                "chunk_count": int(row["chunk_count"]),
+                "indexed_chunks": int(row["indexed_chunks"]),
+                "error_message": row["error_message"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
             }
             for row in rows
         ]

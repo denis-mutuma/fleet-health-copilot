@@ -55,13 +55,14 @@ Index sample runbooks and historical incidents:
 .venv/bin/python services/orchestrator/scripts/index_documents.py
 ```
 
-Open `http://localhost:3000`, sign in, and click the simulation button.
+Open `http://localhost:3000`, sign in, and click **"Simulate thermal incident"** from the Operations dashboard.
 
 Expected result:
 
-- Dashboard shows an open incident for `robot-03`.
-- Incident detail shows summary, hypotheses, recommended actions, confidence, agent trace, verification checks, latency, and evidence.
+- **Operations** section shows an open incident for `robot-03` in the incident queue, with status stats updated.
+- Clicking the incident opens the investigation page, which shows: incident ID, device, status badge, confidence, latency, verification status, root cause hypotheses panel, recommended actions panel, agent trace, and evidence.
 - Evidence references retrieved runbooks or historical incidents, not synthetic fallback IDs.
+- The hero header on each route displays context-specific metadata pills summarising key facts.
 
 ## Chat Demo Flow
 

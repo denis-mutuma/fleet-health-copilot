@@ -64,7 +64,7 @@ Index the seed runbooks into the orchestrator's retrieval backend:
 
 ### 5. Simulate an Incident
 
-Click **"Simulate thermal incident"** on the dashboard. The system will:
+Sign in and click **"Simulate thermal incident"** on the Operations dashboard. The system will:
 1. Detect the threshold breach (Monitor Agent).
 2. Retrieve relevant runbooks and incident history (Retriever Agent).
 3. Diagnose root causes (Diagnosis Agent).
@@ -72,13 +72,17 @@ Click **"Simulate thermal incident"** on the dashboard. The system will:
 5. Verify the plan (Verifier Agent).
 6. Generate a final incident report (Reporter Agent).
 
-### 6. Use Incident Chat
+### 6. Investigate in the Operator Console
 
-Open `http://localhost:3000/chat` for a persistent operator chat workspace.
+The app shell exposes three sections in the left sidebar:
 
-- Ask RAG questions and inspect citations.
-- Report incidents with structured natural language.
-- Run operational commands such as `/list incidents`, `/open <incident_id>`, `/status <incident_id> acknowledged`, `/checklist`, and `/simulate`.
+| Section | Path | Purpose |
+|---------|------|---------|
+| **Operations** | `/` | Dashboard with incident queue, status stats, and simulation control |
+| **Chat** | `/chat` | Persistent operator chat with RAG citations and action tools |
+| **Knowledge** | `/rag` | Retrieval corpus management — upload, list, and delete documents |
+
+From an open incident, click **"Open chat for this incident"** to jump into a context-scoped conversation. From chat you can ask grounded questions, update status, generate checklists, and create or simulate incidents.
 
 ## Architecture
 
@@ -94,7 +98,7 @@ Open `http://localhost:3000/chat` for a persistent operator chat workspace.
 │     └─ SQLite or PostgreSQL + JSONL (persistence + seed data)
 ```
 
-- **apps/web** — Authenticated operator dashboard (Next.js, Clerk).
+- **apps/web** — Authenticated operator console with sidebar shell: Operations dashboard, Chat workspace, and Knowledge corpus manager (Next.js, Clerk).
 - **services/orchestrator** — Event ingestion, agent orchestration, RAG, incident persistence.
 - **services/mcp-*** — MCP tool servers exposing telemetry, retrieval, and incident operations.
 - **packages/contracts** — Shared JSON schemas for API contracts.

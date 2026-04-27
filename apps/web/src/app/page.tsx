@@ -1,11 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import {
-  SignInButton,
-  SignedIn,
-  SignedOut,
-  UserButton
-} from "@clerk/nextjs";
 import SimulateIncidentButton from "./components/simulate-incident-button";
 import RagUploadForm from "./components/rag-upload-form";
 import { listIncidents, type IncidentReport } from "@/lib/incidents";
@@ -33,39 +27,34 @@ export default async function HomePage() {
   );
 
   return (
-    <main className="container" aria-label="Fleet incident operations dashboard">
+    <main className="container page-grid" aria-label="Fleet incident operations dashboard">
       <header className="hero">
-        <div className="header-row">
-          <div className="brand-row">
-            <Image
-              src="/logo.png"
-              alt="Fleet Health Copilot logo"
-              className="brand-logo"
-              width={28}
-              height={28}
-            />
-            <p className="eyebrow">Fleet Health Copilot</p>
-          </div>
-          <div>
-            <SignedIn>
-              <UserButton />
-            </SignedIn>
-            <SignedOut>
-              <SignInButton mode="modal" />
-            </SignedOut>
-          </div>
+        <div className="brand-row">
+          <Image
+            src="/logo.png"
+            alt="Fleet Health Copilot logo"
+            className="brand-logo"
+            width={28}
+            height={28}
+          />
+          <p className="eyebrow">Operator console</p>
         </div>
-        <h1>Incident Operations Dashboard</h1>
+        <h1>Run fleet incidents from one grounded workspace.</h1>
         <p>
-          MVP view for authenticated operators. Live ingestion, multi-agent
-          reasoning, and report generation are provided by the orchestrator.
+          Monitor active reports, inspect evidence-backed diagnoses, escalate through chat,
+          and manage retrieval context without leaving the console.
         </p>
+        <div className="report-metadata">
+          <span>{incidents.length} incident records</span>
+          <span>6-agent orchestration</span>
+          <span>Retrieval-backed reasoning</span>
+        </div>
         <div className="actions">
           <Link href="/chat" className="secondary-button rag-link-button">
-            Open incident chat
+            Open operator chat
           </Link>
           <Link href="/rag" className="secondary-button rag-link-button">
-            Manage RAG corpus
+            Manage knowledge corpus
           </Link>
         </div>
         <SimulateIncidentButton />
@@ -74,7 +63,7 @@ export default async function HomePage() {
       <section className="stats-grid" aria-label="Incident status summary">
         <div className="stat-card">
           <span className="stat-value">{incidentCounts.open}</span>
-          <span className="stat-label">Open</span>
+          <span className="stat-label">Open incidents</span>
         </div>
         <div className="stat-card">
           <span className="stat-value">{incidentCounts.acknowledged}</span>
@@ -86,45 +75,62 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="card">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Operations queue</p>
-            <h2>Latest incidents</h2>
+      <section className="panel-grid">
+        <section className="card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Operations queue</p>
+              <h2>Latest incidents</h2>
+            </div>
+            <span className="muted">{incidents.length} total</span>
           </div>
-          <span className="muted">{incidents.length} total</span>
-        </div>
-        {orchestratorUnavailable ? (
-          <p className="error">
-            Orchestrator is unavailable. Start the API on port 8000, then
-            refresh this page.
-          </p>
-        ) : incidents.length === 0 ? (
-          <p className="muted">
-            No incidents yet. Trigger a simulation to populate the dashboard.
-          </p>
-        ) : (
-          <ul className="incident-list">
-            {incidents.map((incident) => (
-              <li key={incident.incident_id} className="incident-list-item">
-                <Link href={`/incidents/${incident.incident_id}`}>
-                  <span>
-                    <strong>{incident.incident_id}</strong>
-                    <span className={`status-badge status-${incident.status}`}>
-                      {statusLabel(incident.status)}
+          {orchestratorUnavailable ? (
+            <p className="error">
+              Orchestrator is unavailable. Start the API on port 8000, then refresh this page.
+            </p>
+          ) : incidents.length === 0 ? (
+            <p className="muted">
+              No incidents yet. Trigger a simulation to populate the dashboard.
+            </p>
+          ) : (
+            <ul className="incident-list">
+              {incidents.map((incident) => (
+                <li key={incident.incident_id} className="incident-list-item">
+                  <Link href={`/incidents/${incident.incident_id}`}>
+                    <span className="chat-incident-header">
+                      <strong className="mono">{incident.incident_id}</strong>
+                      <span className={`status-badge status-${incident.status}`}>
+                        {statusLabel(incident.status)}
+                      </span>
                     </span>
-                  </span>
-                  <span className="incident-summary">
-                    {incident.device_id} · {incident.summary}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                    <span className="incident-summary">
+                      {incident.device_id} · {incident.summary}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-      <RagUploadForm />
+        <div className="stack-grid">
+          <section className="card">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Operator flow</p>
+                <h2>Suggested loop</h2>
+              </div>
+            </div>
+            <ol className="timeline-list">
+              <li>Trigger or ingest an incident and confirm the queue updates.</li>
+              <li>Open the incident to inspect evidence, hypotheses, and verification.</li>
+              <li>Jump into chat for follow-up actions, status changes, and grounded Q&A.</li>
+            </ol>
+          </section>
+
+          <RagUploadForm />
+        </div>
+      </section>
     </main>
   );
 }

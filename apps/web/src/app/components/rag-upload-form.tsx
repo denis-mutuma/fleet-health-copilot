@@ -145,7 +145,7 @@ export default function RagUploadForm() {
           <input
             key={file ? file.name : "empty"}
             type="file"
-            accept=".txt,.md,.markdown,.json,.jsonl,.csv,.log"
+            accept=".txt,.md,.markdown,.json,.jsonl,.csv,.log,.html,.htm,.pdf,.docx"
             onChange={(event) => {
               const selected = event.target.files?.[0] ?? null;
               setFile(selected);

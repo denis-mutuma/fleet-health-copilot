@@ -402,21 +402,27 @@ export default function ChatClient() {
   const messages = conversation?.messages ?? [];
 
   return (
-    <main className="container" aria-label="Incident operations chat">
+    <main className="container page-grid" aria-label="Incident operations chat">
       <header className="hero">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Operations</p>
-            <h1>Incident Chat Copilot</h1>
-          </div>
+        <p className="eyebrow">Operator chat</p>
+        <h1>Coordinate incidents through grounded conversation.</h1>
+        <p>
+          Ask evidence-backed questions, report incidents in natural language, inspect citations,
+          and execute operational actions without leaving the thread.
+        </p>
+        <div className="report-metadata">
+          <span>{sessions.length} sessions</span>
+          <span>{activeSession?.incident_id ? `Scoped to ${activeSession.incident_id}` : "General ops mode"}</span>
+          <span>Citations grouped by source</span>
+        </div>
+        <div className="actions">
           <Link href="/" className="secondary-button rag-link-button">
             Back to dashboard
           </Link>
+          <Link href="/rag" className="secondary-button rag-link-button">
+            Review knowledge corpus
+          </Link>
         </div>
-        <p>
-          Ask RAG-backed questions with citations, report incidents from chat, run simulations,
-          update statuses, and generate action checklists.
-        </p>
       </header>
 
       <section className="chat-layout card">

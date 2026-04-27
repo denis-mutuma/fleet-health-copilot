@@ -12,21 +12,30 @@ export default async function RagPage() {
     unavailable = true;
   }
 
+  const totalChunks = documents.reduce((sum, item) => sum + item.chunk_count, 0);
+
   return (
-    <main className="container" aria-label="RAG corpus management">
+    <main className="container page-grid" aria-label="RAG corpus management">
       <header className="hero">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Operations</p>
-            <h1>RAG Corpus Management</h1>
-          </div>
+        <p className="eyebrow">Knowledge workspace</p>
+        <h1>Keep retrieval grounded and current.</h1>
+        <p>
+          Review ingested context, upload new operating knowledge, and keep the corpus that powers
+          citations and agent reasoning healthy.
+        </p>
+        <div className="report-metadata">
+          <span>{documents.length} document families</span>
+          <span>{totalChunks} indexed chunks</span>
+          <span>{unavailable ? "Backend unavailable" : "Backend connected"}</span>
+        </div>
+        <div className="actions">
           <Link href="/" className="secondary-button rag-link-button">
             Back to dashboard
           </Link>
+          <Link href="/chat" className="secondary-button rag-link-button">
+            Ask the copilot
+          </Link>
         </div>
-        <p>
-          Review and remove ingested knowledge documents used by retrieval and agent reasoning.
-        </p>
       </header>
 
       {unavailable ? (
@@ -36,7 +45,24 @@ export default async function RagPage() {
           </p>
         </section>
       ) : (
-        <RagCorpusTable documents={documents} />
+        <>
+          <section className="panel-grid">
+            <RagCorpusTable documents={documents} />
+            <section className="card">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Coverage</p>
+                  <h2>What good corpus hygiene looks like</h2>
+                </div>
+              </div>
+              <ol className="timeline-list">
+                <li>Keep current runbooks uploaded with source and tag metadata.</li>
+                <li>Review citations in chat after changes to confirm retrieval quality.</li>
+                <li>Remove stale or duplicated documents when they dilute relevance.</li>
+              </ol>
+            </section>
+          </section>
+        </>
       )}
     </main>
   );

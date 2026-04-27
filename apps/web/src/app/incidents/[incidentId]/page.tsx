@@ -40,18 +40,17 @@ export default async function IncidentDetailPage({
   }
 
   return (
-    <main className="container">
+    <main className="container page-grid">
       <header className="hero">
-        <p className="eyebrow">Incident report</p>
-        <h1>{incident.incident_id}</h1>
+        <p className="eyebrow">Incident investigation</p>
+        <h1>{incident.summary}</h1>
         <p>
-          Device: <strong>{incident.device_id}</strong>{" "}
-          <span className={`status-badge status-${incident.status}`}>
-            {statusLabel(incident.status)}
-          </span>
+          Device <strong>{incident.device_id}</strong> is currently tracked under
+          <span className={`status-badge status-${incident.status}`}> {statusLabel(incident.status)}</span>
+          . Review evidence, verify the reasoning chain, and coordinate action from chat.
         </p>
-        <p>{incident.summary}</p>
         <div className="report-metadata">
+          <span className="mono">{incident.incident_id}</span>
           <span>Confidence {(incident.confidence_score * 100).toFixed(0)}%</span>
           <span>Diagnosis {incident.latency_ms.toFixed(1)} ms</span>
           <span>
@@ -63,64 +62,91 @@ export default async function IncidentDetailPage({
           incidentId={incident.incident_id}
           status={incident.status}
         />
-        <p>
+        <div className="actions">
           <Link href={`/chat?incidentId=${encodeURIComponent(incident.incident_id)}`}>
             Open chat for this incident
           </Link>
-        </p>
-        <p>
           <Link href="/">Back to dashboard</Link>
-        </p>
+        </div>
       </header>
 
-      <section className="card">
-        <h2>Root cause hypotheses</h2>
-        <ul>
-          {incident.root_cause_hypotheses.map((item, idx) => (
-            <li key={`hypothesis-${idx}`}>{item}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="card">
-        <h2>Recommended actions</h2>
-        <ul>
-          {incident.recommended_actions.map((item, idx) => (
-            <li key={`action-${idx}`}>{item}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="card">
-        <h2>Agent trace</h2>
-        <ol className="timeline-list">
-          {incident.agent_trace.map((item, idx) => (
-            <li key={`trace-${idx}`}>{item}</li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="card">
-        <h2>Verification</h2>
-        <ul>
-          {(incident.verification.checks ?? []).map((check, idx) => (
-            <li key={`check-${idx}`}>{check}</li>
-          ))}
-        </ul>
-        {(incident.verification.warnings ?? []).length > 0 ? (
-          <div className="warning-box">
-            <strong>Warnings</strong>
-            <ul>
-              {(incident.verification.warnings ?? []).map((warning, idx) => (
-                <li key={`warning-${idx}`}>{warning}</li>
-              ))}
-            </ul>
+      <section className="panel-grid">
+        <section className="card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Diagnosis</p>
+              <h2>Root cause hypotheses</h2>
+            </div>
           </div>
-        ) : null}
+          <ul>
+            {incident.root_cause_hypotheses.map((item, idx) => (
+              <li key={`hypothesis-${idx}`}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Verification</p>
+              <h2>Checks and warnings</h2>
+            </div>
+          </div>
+          <ul>
+            {(incident.verification.checks ?? []).map((check, idx) => (
+              <li key={`check-${idx}`}>{check}</li>
+            ))}
+          </ul>
+          {(incident.verification.warnings ?? []).length > 0 ? (
+            <div className="warning-box">
+              <strong>Warnings</strong>
+              <ul>
+                {(incident.verification.warnings ?? []).map((warning, idx) => (
+                  <li key={`warning-${idx}`}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+      </section>
+
+      <section className="panel-grid">
+        <section className="card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Planning</p>
+              <h2>Recommended actions</h2>
+            </div>
+          </div>
+          <ul>
+            {incident.recommended_actions.map((item, idx) => (
+              <li key={`action-${idx}`}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Agent trace</p>
+              <h2>Reasoning chain</h2>
+            </div>
+          </div>
+          <ol className="timeline-list">
+            {incident.agent_trace.map((item, idx) => (
+              <li key={`trace-${idx}`}>{item}</li>
+            ))}
+          </ol>
+        </section>
       </section>
 
       <section className="card">
-        <h2>Evidence</h2>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Evidence</p>
+            <h2>Retrieved context</h2>
+          </div>
+        </div>
         <div className="evidence-grid">
           {Object.entries(incident.evidence).map(([key, values], idx) => (
             <div key={`evidence-${idx}`} className="evidence-group">

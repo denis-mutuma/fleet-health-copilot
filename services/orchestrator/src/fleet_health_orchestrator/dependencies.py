@@ -16,7 +16,9 @@ from fleet_health_orchestrator.agents import (
 )
 from fleet_health_orchestrator.config import OrchestratorSettings, get_settings
 from fleet_health_orchestrator.exceptions import DependencyInitializationError
+from fleet_health_orchestrator.chat_orchestrator import ChatToolOrchestrator
 from fleet_health_orchestrator.logging_config import setup_logging
+from fleet_health_orchestrator.mcp_client_adapter import MCPClientAdapter
 from fleet_health_orchestrator.rag import RetrievalBackend, build_retrieval_backend
 from fleet_health_orchestrator.repository import FleetRepository
 
@@ -28,6 +30,8 @@ class AppDependencies:
     repository: FleetRepository
     retrieval_backend: RetrievalBackend
     orchestrator: AgentOrchestrator
+    mcp_adapter: MCPClientAdapter | None
+    chat_orchestrator: ChatToolOrchestrator | None
     metrics: dict[str, float]
 
 
@@ -104,6 +108,24 @@ def initialize_dependencies() -> AppDependencies:
         logger.error("%s %s", error.message, exc)
         raise RuntimeError(error.message) from exc
 
+    mcp_adapter: MCPClientAdapter | None = None
+    chat_orchestrator: ChatToolOrchestrator | None = None
+    try:
+        mcp_adapter = MCPClientAdapter(
+            repository=repository,
+            retrieval_backend=retrieval_backend,
+            logger=logger,
+            tool_timeout_seconds=settings.chat_tool_timeout_seconds,
+        )
+        chat_orchestrator = ChatToolOrchestrator(
+            logger=logger,
+            settings=settings,
+            mcp_adapter=mcp_adapter,
+        )
+        logger.info("Chat tool orchestrator initialized")
+    except Exception as exc:
+        logger.warning("Chat tool orchestrator initialization failed; deterministic fallback remains active: %s", exc)
+
     metrics = {
         "events_ingested_total": 0.0,
         "incidents_generated_total": 0.0,
@@ -118,6 +140,8 @@ def initialize_dependencies() -> AppDependencies:
         repository=repository,
         retrieval_backend=retrieval_backend,
         orchestrator=orchestrator,
+        mcp_adapter=mcp_adapter,
+        chat_orchestrator=chat_orchestrator,
         metrics=metrics,
     )
 

@@ -15,6 +15,21 @@ export type ChatMessage = {
   action: string | null;
   action_status: "success" | "error" | null;
   action_payload: Record<string, unknown>;
+  tool_calls?: Array<{
+    tool_name: string;
+    input: Record<string, unknown>;
+    output: Record<string, unknown>;
+    latency_ms: number;
+    error?: string | null;
+  }>;
+  trace_spans?: Array<{
+    span_name: string;
+    status: "success" | "error" | "skipped";
+    latency_ms: number;
+    metadata: Record<string, unknown>;
+    error?: string | null;
+  }>;
+  llm_cost_usd?: number | null;
   created_at: string;
 };
 

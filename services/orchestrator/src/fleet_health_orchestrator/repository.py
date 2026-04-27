@@ -202,6 +202,9 @@ class FleetRepository:
                         action TEXT,
                         action_status TEXT,
                         action_payload_json TEXT NOT NULL DEFAULT '{}',
+                        tool_calls_json TEXT NOT NULL DEFAULT '[]',
+                        trace_spans_json TEXT NOT NULL DEFAULT '[]',
+                        llm_cost_usd DOUBLE PRECISION,
                         created_at TEXT NOT NULL,
                         FOREIGN KEY(session_id) REFERENCES chat_sessions(session_id)
                     )
@@ -216,11 +219,35 @@ class FleetRepository:
                         action TEXT,
                         action_status TEXT,
                         action_payload_json TEXT NOT NULL DEFAULT '{}',
+                        tool_calls_json TEXT NOT NULL DEFAULT '[]',
+                        trace_spans_json TEXT NOT NULL DEFAULT '[]',
+                        llm_cost_usd DOUBLE PRECISION,
                         created_at TEXT NOT NULL
                     )
                     """,
                 )
             )
+
+            chat_optional_columns = {
+                "tool_calls_json": "TEXT NOT NULL DEFAULT '[]'",
+                "trace_spans_json": "TEXT NOT NULL DEFAULT '[]'",
+                "llm_cost_usd": "DOUBLE PRECISION",
+            }
+            if self._use_postgres:
+                for column, definition in chat_optional_columns.items():
+                    connection.execute(
+                        f"ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS {column} {definition}"
+                    )
+            else:
+                chat_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(chat_messages)").fetchall()
+                }
+                for column, definition in chat_optional_columns.items():
+                    if column not in chat_columns:
+                        connection.execute(
+                            f"ALTER TABLE chat_messages ADD COLUMN {column} {definition}"
+                        )
 
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at ON chat_messages(session_id, created_at)"
@@ -794,6 +821,9 @@ class FleetRepository:
         action: str | None = None,
         action_status: str | None = None,
         action_payload: dict[str, object] | None = None,
+        tool_calls: list[dict[str, object]] | None = None,
+        trace_spans: list[dict[str, object]] | None = None,
+        llm_cost_usd: float | None = None,
     ) -> dict[str, object]:
         now = _utc_now_iso()
         with self._connect() as connection:
@@ -801,20 +831,23 @@ class FleetRepository:
                 self._sql(
                     """
                     INSERT OR REPLACE INTO chat_messages
-                    (message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, tool_calls_json, trace_spans_json, llm_cost_usd, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     """
                     INSERT INTO chat_messages
-                    (message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, tool_calls_json, trace_spans_json, llm_cost_usd, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (message_id) DO UPDATE SET
                       role = EXCLUDED.role,
                       content = EXCLUDED.content,
                       citations_json = EXCLUDED.citations_json,
                       action = EXCLUDED.action,
                       action_status = EXCLUDED.action_status,
-                      action_payload_json = EXCLUDED.action_payload_json
+                      action_payload_json = EXCLUDED.action_payload_json,
+                      tool_calls_json = EXCLUDED.tool_calls_json,
+                      trace_spans_json = EXCLUDED.trace_spans_json,
+                      llm_cost_usd = EXCLUDED.llm_cost_usd
                     """,
                 ),
                 (
@@ -826,6 +859,9 @@ class FleetRepository:
                     action,
                     action_status,
                     json.dumps(action_payload or {}),
+                    json.dumps(tool_calls or []),
+                    json.dumps(trace_spans or []),
+                    llm_cost_usd,
                     now,
                 ),
             )
@@ -854,6 +890,9 @@ class FleetRepository:
             "action": action,
             "action_status": action_status,
             "action_payload": action_payload or {},
+            "tool_calls": tool_calls or [],
+            "trace_spans": trace_spans or [],
+            "llm_cost_usd": llm_cost_usd,
             "created_at": now,
         }
 
@@ -862,13 +901,13 @@ class FleetRepository:
             rows = connection.execute(
                 self._sql(
                     """
-                    SELECT message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, created_at
+                    SELECT message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, tool_calls_json, trace_spans_json, llm_cost_usd, created_at
                     FROM chat_messages
                     WHERE session_id = ?
                     ORDER BY created_at ASC
                     """,
                     """
-                    SELECT message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, created_at
+                    SELECT message_id, session_id, role, content, citations_json, action, action_status, action_payload_json, tool_calls_json, trace_spans_json, llm_cost_usd, created_at
                     FROM chat_messages
                     WHERE session_id = %s
                     ORDER BY created_at ASC
@@ -887,6 +926,9 @@ class FleetRepository:
                 "action": row["action"],
                 "action_status": row["action_status"],
                 "action_payload": json.loads(row["action_payload_json"]),
+                "tool_calls": json.loads(row["tool_calls_json"] or "[]"),
+                "trace_spans": json.loads(row["trace_spans_json"] or "[]"),
+                "llm_cost_usd": row["llm_cost_usd"],
                 "created_at": row["created_at"],
             }
             for row in rows

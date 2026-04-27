@@ -1378,11 +1378,52 @@ def post_chat_message(
     )
 
     session = _to_chat_session(session_payload)
-    assistant_text, citations, action, action_status, action_payload = _handle_chat_action(
-        content=message.content,
-        dependencies=dependencies,
-        session=session,
+    tool_calls: list[dict[str, object]] = []
+    trace_spans: list[dict[str, object]] = []
+    llm_cost_usd: float | None = None
+
+    should_use_llm_chat = (
+        dependencies.settings.llm_chat_enabled
+        and dependencies.chat_orchestrator is not None
+        and not message.content.strip().lower().startswith("/simulate")
+        and not message.content.strip().lower().startswith("/checklist")
+        and not message.content.strip().lower().startswith("report incident")
     )
+
+    if should_use_llm_chat:
+        try:
+            history = dependencies.repository.list_chat_messages(clean_session_id)
+            turn_result = dependencies.chat_orchestrator.run_turn(
+                user_content=message.content,
+                session=session,
+                chat_history=history,
+            )
+        except Exception as exc:
+            dependencies.logger.warning("LLM chat turn failed, using deterministic fallback: %s", exc)
+            turn_result = None
+
+        if turn_result is not None:
+            assistant_text = turn_result.content
+            citations = turn_result.citations
+            action = turn_result.action
+            action_status = turn_result.action_status
+            action_payload = turn_result.action_payload
+            tool_calls = turn_result.tool_calls
+            trace_spans = turn_result.trace_spans
+            llm_cost_usd = turn_result.llm_cost_usd
+        else:
+            assistant_text, citations, action, action_status, action_payload = _handle_chat_action(
+                content=message.content,
+                dependencies=dependencies,
+                session=session,
+            )
+    else:
+        assistant_text, citations, action, action_status, action_payload = _handle_chat_action(
+            content=message.content,
+            dependencies=dependencies,
+            session=session,
+        )
+
     dependencies.repository.insert_chat_message(
         message_id=f"msg_{uuid4().hex[:14]}",
         session_id=clean_session_id,
@@ -1392,6 +1433,9 @@ def post_chat_message(
         action=action,
         action_status=action_status,
         action_payload=action_payload,
+        tool_calls=tool_calls,
+        trace_spans=trace_spans,
+        llm_cost_usd=llm_cost_usd,
     )
 
     refreshed_session = dependencies.repository.get_chat_session(clean_session_id)

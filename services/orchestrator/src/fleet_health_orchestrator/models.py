@@ -162,6 +162,22 @@ class ChatCitation(BaseModel):
     excerpt: str
 
 
+class ChatToolCall(BaseModel):
+    tool_name: str = Field(min_length=1)
+    input: dict[str, object] = Field(default_factory=dict)
+    output: dict[str, object] = Field(default_factory=dict)
+    latency_ms: float = Field(default=0.0, ge=0.0)
+    error: str | None = None
+
+
+class ChatTraceSpan(BaseModel):
+    span_name: str = Field(min_length=1)
+    status: Literal["success", "error", "skipped"] = "success"
+    latency_ms: float = Field(default=0.0, ge=0.0)
+    metadata: dict[str, object] = Field(default_factory=dict)
+    error: str | None = None
+
+
 class ChatMessage(BaseModel):
     message_id: str
     session_id: str
@@ -171,6 +187,9 @@ class ChatMessage(BaseModel):
     action: str | None = None
     action_status: Literal["success", "error"] | None = None
     action_payload: dict[str, object] = Field(default_factory=dict)
+    tool_calls: list[ChatToolCall] = Field(default_factory=list)
+    trace_spans: list[ChatTraceSpan] = Field(default_factory=list)
+    llm_cost_usd: float | None = Field(default=None, ge=0.0)
     created_at: datetime
 
     @field_validator("message_id", "session_id", "content")

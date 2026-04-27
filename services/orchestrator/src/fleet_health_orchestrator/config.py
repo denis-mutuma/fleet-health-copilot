@@ -143,6 +143,45 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("LLM_DIAGNOSIS_MODEL", "FLEET_OPENAI_DIAGNOSIS_MODEL"),
     )
 
+    llm_chat_enabled: bool = Field(
+        default=False,
+        description="Enable OpenAI-generated chat responses with tool execution",
+        validation_alias=AliasChoices("LLM_CHAT_ENABLED", "FLEET_LLM_CHAT_ENABLED"),
+    )
+    llm_chat_model: str = Field(
+        default="gpt-5.4-mini",
+        description="OpenAI model for chat response generation",
+        validation_alias=AliasChoices("LLM_CHAT_MODEL", "FLEET_LLM_CHAT_MODEL"),
+    )
+    llm_chat_temperature: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature for chat generation",
+        validation_alias=AliasChoices("LLM_CHAT_TEMPERATURE", "FLEET_LLM_CHAT_TEMPERATURE"),
+    )
+    llm_chat_max_output_tokens: int = Field(
+        default=600,
+        ge=64,
+        le=4096,
+        description="Maximum output tokens for OpenAI chat responses",
+        validation_alias=AliasChoices("LLM_CHAT_MAX_OUTPUT_TOKENS", "FLEET_LLM_CHAT_MAX_OUTPUT_TOKENS"),
+    )
+    chat_tool_timeout_seconds: float = Field(
+        default=8.0,
+        ge=1.0,
+        le=60.0,
+        description="Timeout for each MCP tool call during chat (seconds)",
+        validation_alias=AliasChoices("CHAT_TOOL_TIMEOUT_SECONDS", "FLEET_CHAT_TOOL_TIMEOUT_SECONDS"),
+    )
+    chat_tool_max_calls_per_turn: int = Field(
+        default=8,
+        ge=1,
+        le=50,
+        description="Maximum MCP tool calls allowed per chat turn",
+        validation_alias=AliasChoices("CHAT_TOOL_MAX_CALLS_PER_TURN", "FLEET_CHAT_TOOL_MAX_CALLS_PER_TURN"),
+    )
+
     openai_embedding_model: str = Field(
         default="text-embedding-3-large",
         description="OpenAI embedding model for retrieval and indexing",

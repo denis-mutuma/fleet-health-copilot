@@ -28,11 +28,10 @@ python -m venv .venv
 ### AWS Deployment (GitHub Actions)
 
 - **Workflow:** `.github/workflows/deploy-aws.yml`
-- **Trigger dev deploy:** push to `develop` (or manual dispatch with `environment=dev`)
-- **Trigger prod deploy:** push to `main` (or manual dispatch with `environment=prod`)
+- **Trigger prod deploy:** push to `main` (or manual workflow dispatch)
 - **Deploy behavior:** OIDC auth, Terraform init/validate/apply, ECR build+push, image-tag pinning apply, ALB health check
 
-**Required GitHub Environment secrets (dev/prod):**
+**Required GitHub Environment secrets (prod):**
 - `AWS_ROLE_ARN`
 - `TF_STATE_BUCKET`
 - `TF_LOCK_TABLE`
@@ -181,7 +180,7 @@ The project is being refactored for production quality. Phases complete:
 🔄 **Phase 6: DX & CI Reliability** (In Progress)
 - Unified root quality commands (`quality:check`, `docs:links`)
 - CI now runs web lint/build, docs link checks, orchestrator tests, and MCP tests
-- Deploy workflow now supports dev/prod Terraform + ECR rollouts via OIDC
+- Deploy workflow now supports production Terraform + ECR rollouts via OIDC
 
 ⏳ **Phase 7-8:** Performance and final production polish
 

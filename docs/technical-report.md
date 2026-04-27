@@ -45,8 +45,8 @@ The current system includes:
 - `services/mcp-retrieval`: MCP tool server for searching operational context.
 - `services/mcp-incidents`: MCP tool server for creating and reading incident reports.
 - `services/orchestrator/data`: JSONL seed data for demo runbooks, incident history, and telemetry events.
-- `.github/workflows/test.yml`: Pull request quality gate for web, orchestrator, and MCP tests.
-- `infra/terraform`: AWS environment scaffold for dev/test/prod planning.
+- `.github/workflows/deploy-aws.yml`: Production deployment workflow.
+- `infra/terraform`: AWS environment scaffold for production deployment.
 
 ## Agent Design
 
@@ -135,7 +135,7 @@ End-to-end latency and per-request timings are reported by [`evaluate_pipeline.p
 Completed hardening:
 
 - Web container builds the Next.js app and runs `next start`.
-- CI runs web lint/build, orchestrator tests, and MCP tests.
+- Local quality gate runs web lint/build, docs link checks, orchestrator tests, and MCP tests (`npm run quality:check`).
 - Next.js was patched within the current major version.
 - Clerk and ESLint advisories were patched where safe.
 - Deprecated `next lint` was replaced with ESLint CLI.
@@ -144,7 +144,7 @@ Completed hardening:
 Known remaining gaps:
 
 - S3 Vectors **ANN quality** still depends on using the same **`FLEET_EMBEDDING_PROVIDER`** (e.g. `openai`, `http`, `sentence_transformers`) and dimension for both [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) and live queries; the default `hash` provider is deterministic only (the API logs a warning when `s3vectors` + hash). See [s3-vectors-operations.md](s3-vectors-operations.md).
-- Deploys are automated through `.github/workflows/deploy-aws.yml` for `develop` (dev) and `main` (prod), including Terraform apply and ECR image publishing. Environment secrets and networking inputs (VPC/subnets/URLs) still need to be provided in GitHub Environments; managed RDS remains out of scope.
+- Deploys are automated through `.github/workflows/deploy-aws.yml` for `main` (prod), including Terraform apply and ECR image publishing. Environment secrets and networking inputs (VPC/subnets/URLs) still need to be provided in the `prod` GitHub Environment; managed RDS remains out of scope.
 - Agents remain **deterministic for planning and verification**; optional OpenAI **summary refine** and **diagnosis enrichment** exist behind env flags ([`llm.py`](../services/orchestrator/src/fleet_health_orchestrator/llm.py)); there is no LLM-authored action list outside verifier rules.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
 
@@ -159,7 +159,7 @@ Known remaining gaps:
 | MCP tool access | Implemented: telemetry, retrieval, incidents |
 | Evaluation metrics | Implemented with confusion-matrix output |
 | Architecture documentation | Implemented |
-| Cloud deployment story | Implemented in repo: Docker + Terraform with GitHub Actions deploy automation for dev/prod environments |
+| Cloud deployment story | Implemented in repo: Docker + Terraform with GitHub Actions deploy automation for production |
 
 ## Next Steps
 
@@ -167,6 +167,6 @@ Recommended next implementation steps:
 
 1. Configure **`FLEET_EMBEDDING_PROVIDER`** and dimension consistently for S3 Vectors **query** and **`index_s3_vectors.py`** ingestion so ANN matches production vectors (see [s3-vectors-operations.md](s3-vectors-operations.md)).
 2. Deepen diagnosis or verifier grounding against retrieved evidence, or introduce optional LLM-backed variants.
-3. Validate the `deploy-aws.yml` path in a dev AWS account (state backend, IAM, and first green ECS path).
+3. Validate the `deploy-aws.yml` path in production (state backend, IAM, and first green ECS path).
 4. Expand the evaluation dataset beyond the current small seed set.
 5. Extend CI to include MCP tests and optional Terraform validation once the workflow requirements are finalized.

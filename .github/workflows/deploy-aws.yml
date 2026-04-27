@@ -2,49 +2,18 @@ name: Deploy AWS
 
 "on":
   push:
-    branches: [develop, main]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Target environment"
-        required: true
-        type: choice
-        options:
-          - dev
-          - prod
 
 jobs:
-  select-environment:
-    runs-on: ubuntu-latest
-    outputs:
-      target_env: ${{ steps.select.outputs.target_env }}
-    steps:
-      - id: select
-        name: Select target environment
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TARGET="${{ github.event.inputs.environment }}"
-          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
-            TARGET="dev"
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            TARGET="prod"
-          else
-            echo "Unsupported ref: ${{ github.ref }}" >&2
-            exit 1
-          fi
-
-          echo "target_env=${TARGET}" >> "$GITHUB_OUTPUT"
-
   deploy:
     runs-on: ubuntu-latest
-    needs: select-environment
-    environment: ${{ needs.select-environment.outputs.target_env }}
+    environment: prod
     permissions:
       id-token: write
       contents: read
     env:
-      TF_ENV: ${{ needs.select-environment.outputs.target_env }}
+      TF_ENV: prod
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
     steps:
       - uses: actions/checkout@v4

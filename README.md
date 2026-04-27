@@ -252,19 +252,14 @@ PYTHONPATH=services/mcp-incidents/src .venv/bin/pytest -q services/mcp-incidents
 npm run quality:check
 ```
 
-The pull request workflow in **`.github/workflows/test.yml`** runs the current CI checks for this repository: web lint/build, markdown link checks, orchestrator tests, and MCP tests.
-
-The same workflow also includes a **non-blocking** orchestration latency guard job (`orchestrator-latency-guard`). It reports when average time-to-diagnosis exceeds the configured budget (`ORCHESTRATOR_LATENCY_BUDGET_MS`) without failing the full pipeline.
-
 AWS deployment is automated in **`.github/workflows/deploy-aws.yml`**:
 
-- Push to `develop` deploys to the `dev` GitHub Environment.
 - Push to `main` deploys to the `prod` GitHub Environment.
-- `workflow_dispatch` supports manual `dev` or `prod` deploy runs.
+- `workflow_dispatch` runs a manual production deploy.
 
 The deploy workflow performs OIDC auth, Terraform init/validate/apply, ECR image build+push for web/orchestrator, a second Terraform apply pinned to the commit SHA image tags, and a post-deploy ALB health check.
 
-Required per-environment GitHub secrets for deploys:
+Required GitHub Environment secrets for `prod` deploys:
 
 - `AWS_ROLE_ARN`
 - `TF_STATE_BUCKET`
@@ -291,7 +286,7 @@ The current implementation is a concise capstone core: deterministic six-agent o
 
 AWS infrastructure remains scaffolded under `infra/terraform` for optional environment provisioning. For S3 Vectors and embeddings, keep **`FLEET_EMBEDDING_PROVIDER`** aligned with indexing and query-time configuration; optional OpenAI flags are documented under **Optional OpenAI assist** above.
 
-The canonical deployment path is now GitHub Actions + Terraform under `infra/terraform/env/dev.tfvars` and `infra/terraform/env/prod.tfvars`.
+The canonical deployment path is now GitHub Actions + Terraform for production under `infra/terraform/env/prod.tfvars`.
 
 ## Git and history
 

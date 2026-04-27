@@ -1,6 +1,7 @@
 locals {
   orchestrator_data_mount_path = "/data"
   postgres_enabled             = var.enable_ecs && var.enable_postgres
+  runtime_private_subnet_ids   = length(var.private_subnet_ids) > 0 ? var.private_subnet_ids : var.public_subnet_ids
   orchestrator_efs_enabled     = var.enable_ecs && var.enable_orchestrator_efs && !local.postgres_enabled
   orchestrator_db_path         = local.orchestrator_efs_enabled ? "${local.orchestrator_data_mount_path}/fleet-health.db" : lookup(var.orchestrator_environment, "FLEET_DB_PATH", "/tmp/fleet-health.db")
   web_orchestrator_api_base_url = (
@@ -446,7 +447,7 @@ resource "aws_lb" "orchestrator" {
   internal           = true
   load_balancer_type = "application"
   security_groups    = [aws_security_group.orchestrator_alb[0].id]
-  subnets            = var.public_subnet_ids
+  subnets            = local.runtime_private_subnet_ids
 
   tags = local.common_tags
 }

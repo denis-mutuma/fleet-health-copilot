@@ -95,6 +95,17 @@ variable "public_subnet_ids" {
   }
 }
 
+variable "private_subnet_ids" {
+  type        = list(string)
+  description = "Optional private subnet IDs for internal ALB, API Gateway VPC Link, and PostgreSQL. When empty, public_subnet_ids are used as a fallback."
+  default     = []
+
+  validation {
+    condition     = !var.enable_ecs || length(var.private_subnet_ids) == 0 || length(var.private_subnet_ids) >= 2
+    error_message = "private_subnet_ids must be empty or include at least two subnet IDs when enable_ecs is true."
+  }
+}
+
 variable "container_image_tags" {
   type        = map(string)
   description = "Image tags to deploy from the generated ECR repositories, keyed by service name."

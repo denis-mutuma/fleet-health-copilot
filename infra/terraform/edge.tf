@@ -21,7 +21,7 @@ resource "aws_apigatewayv2_vpc_link" "orchestrator" {
 
   name               = "${local.name_prefix}-orchestrator"
   security_group_ids = [aws_security_group.apigateway_vpc_link[0].id]
-  subnet_ids         = var.public_subnet_ids
+  subnet_ids         = local.runtime_private_subnet_ids
 
   tags = local.common_tags
 }

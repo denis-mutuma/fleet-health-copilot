@@ -266,7 +266,7 @@ AWS deployment is automated in **`.github/workflows/deploy-aws.yml`**:
 - Push to `main` deploys to the `prod` GitHub Environment.
 - `workflow_dispatch` runs a manual production deploy.
 
-The deploy workflow performs OIDC auth, Terraform init/validate/apply, ECR image build+push for web/orchestrator, a second Terraform apply pinned to the commit SHA image tags, ECS stabilization, and a post-deploy ALB health check. Terraform now provisions the production edge/runtime path: CloudFront, WAF, API Gateway, ECS, and PostgreSQL.
+The deploy workflow performs OIDC auth, Terraform init/validate/apply, ECR image build+push for web/orchestrator, a second Terraform apply pinned to the commit SHA image tags, ECS stabilization, a post-deploy ALB health check, and an API Gateway `/health` check when API Gateway is enabled. Terraform now provisions the production edge/runtime path: CloudFront, WAF, API Gateway, ECS, and PostgreSQL.
 
 Required GitHub Environment secrets for `prod` deploys:
 
@@ -277,7 +277,10 @@ Required GitHub Environment secrets for `prod` deploys:
 - `CLERK_SECRET_KEY`
 - `VPC_ID`
 - `PUBLIC_SUBNET_IDS_JSON`
-- `WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` (recommended for browser API routing)
+
+Optional Terraform setting (recommended for production network isolation):
+
+- `private_subnet_ids` in `infra/terraform/env/prod.tfvars` (list of private subnets for PostgreSQL, internal ALB, and API Gateway VPC Link). When omitted, Terraform falls back to `public_subnet_ids`.
 
 You can also run the full local stack with Docker:
 

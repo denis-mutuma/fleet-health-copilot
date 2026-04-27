@@ -1,9 +1,8 @@
 resource "random_password" "postgres" {
   count = var.enable_postgres ? 1 : 0
 
-  length           = 24
-  special          = true
-  override_special = "!#$%&*()-_=+[]{}<>:?"
+  length  = 24
+  special = false
 }
 
 resource "aws_security_group" "postgres" {
@@ -36,7 +35,7 @@ resource "aws_db_subnet_group" "orchestrator" {
   count = var.enable_postgres ? 1 : 0
 
   name       = "${local.name_prefix}-postgres"
-  subnet_ids = var.public_subnet_ids
+  subnet_ids = local.runtime_private_subnet_ids
 
   tags = local.common_tags
 }

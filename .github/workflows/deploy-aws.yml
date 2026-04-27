@@ -183,3 +183,25 @@ jobs:
 
           echo "ALB health check failed" >&2
           exit 1
+
+      - name: Post-deploy API Gateway health check
+        run: |
+          set -euo pipefail
+          apigw=$(terraform -chdir=infra/terraform output -raw orchestrator_api_gateway_url || true)
+          if [ -z "${apigw}" ] || [ "${apigw}" = "null" ]; then
+            echo "API Gateway not enabled; skipping orchestrator API health check."
+            exit 0
+          fi
+
+          for i in $(seq 1 12); do
+            code=$(curl -k -o /dev/null -s -w "%{http_code}" "${apigw%/}/health" || true)
+            if [ "${code}" = "200" ]; then
+              echo "API Gateway health check passed with HTTP ${code}"
+              exit 0
+            fi
+            echo "Waiting for API Gateway (${i}/12), got HTTP ${code}"
+            sleep 10
+          done
+
+          echo "API Gateway health check failed" >&2
+          exit 1

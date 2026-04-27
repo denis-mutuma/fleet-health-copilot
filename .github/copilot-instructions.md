@@ -29,7 +29,7 @@ python -m venv .venv
 
 - **Workflow:** `.github/workflows/deploy-aws.yml`
 - **Trigger prod deploy:** push to `main` (or manual workflow dispatch)
-- **Deploy behavior:** OIDC auth, Terraform init/validate/apply, ECR build+push, image-tag pinning apply, ECS stabilization, ALB health check
+- **Deploy behavior:** OIDC auth, Terraform init/validate/apply, ECR build+push, image-tag pinning apply, ECS stabilization, ALB health check, API Gateway health check (when enabled)
 
 **Required GitHub Environment secrets (prod):**
 - `AWS_ROLE_ARN`
@@ -39,6 +39,9 @@ python -m venv .venv
 - `CLERK_SECRET_KEY`
 - `VPC_ID`
 - `PUBLIC_SUBNET_IDS_JSON`
+
+Optional Terraform setting (recommended for production network isolation):
+- `private_subnet_ids` in `infra/terraform/env/prod.tfvars`
 
 ### Testing & Quality
 

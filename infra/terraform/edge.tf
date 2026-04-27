@@ -152,6 +152,15 @@ resource "aws_wafv2_web_acl" "cloudfront" {
       managed_rule_group_statement {
         name        = "AWSManagedRulesCommonRuleSet"
         vendor_name = "AWS"
+
+        # Clerk handshake tokens are large JWTs that exceed the default 2048-byte
+        # query string limit. Count instead of block so the handshake is not 403'd.
+        rule_action_override {
+          name = "SizeRestrictions_QUERYSTRING"
+          action_to_use {
+            count {}
+          }
+        }
       }
     }
 

@@ -6,10 +6,14 @@ Fleet Health Copilot is a software-only incident operations platform for simulat
 
 ```mermaid
 flowchart LR
-  operator["Operator"] --> webApp["Next.js Dashboard"]
+  operator["Operator"] --> edge["CloudFront + WAF"]
+  edge --> webAlb["Public Web ALB"]
+  webAlb --> webApp["Next.js Dashboard"]
   webApp --> webApi["Next.js API Routes"]
-  webApi --> orchestrator["FastAPI Orchestrator"]
-  orchestrator --> sqlite["SQLite Store"]
+  webApi --> apiGateway["HTTP API Gateway"]
+  apiGateway --> internalAlb["Internal Orchestrator ALB"]
+  internalAlb --> orchestrator["FastAPI Orchestrator"]
+  orchestrator --> store["SQLite (local) or PostgreSQL (prod)"]
   orchestrator --> ragBackend["Retrieval Backend"]
   mcpTools["MCP Tool Servers"] --> orchestrator
   seedData["Seed Events And Runbooks"] --> orchestrator
@@ -100,3 +104,10 @@ Local deployment uses Docker Compose:
 - `orchestrator`: FastAPI API served by Uvicorn.
 
 AWS deploy automation runs through **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)** with Terraform in `infra/terraform` for the `prod` environment.
+
+Production edge/runtime details:
+
+- CloudFront fronts the public web ALB and is the preferred public entrypoint.
+- AWS WAF attaches to the CloudFront distribution.
+- API Gateway fronts the orchestrator through a VPC Link to an internal ALB.
+- Production persistence uses PostgreSQL; local development still defaults to SQLite.

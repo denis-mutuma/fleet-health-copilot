@@ -43,12 +43,12 @@ def initialize_dependencies() -> AppDependencies:
     logger = setup_logging(log_level=settings.log_level)
 
     try:
-        repository = FleetRepository(settings.database_path)
-        logger.info("Repository initialized at %s", settings.database_path)
+        repository = FleetRepository(settings.database_path, database_url=settings.database_url)
+        logger.info("Repository initialized at %s", settings.database_target)
     except Exception as exc:
         error = DependencyInitializationError(
             "Failed to initialize repository.",
-            details={"database_path": str(settings.database_path)},
+            details={"database": settings.database_target},
         )
         logger.error("%s %s", error.message, exc)
         raise RuntimeError(error.message) from exc

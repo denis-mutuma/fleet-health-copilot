@@ -3,6 +3,10 @@ aws_region  = "us-east-1"
 
 enable_ecs              = true
 enable_orchestrator_efs = true
+enable_postgres         = true
+enable_api_gateway      = true
+enable_cloudfront       = true
+enable_waf              = true
 enable_s3_vectors_rag   = false
 
 manage_github_oidc_provider = false

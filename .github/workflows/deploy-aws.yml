@@ -14,7 +14,7 @@ jobs:
       contents: read
     env:
       TF_ENV: prod
-      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
 
@@ -79,7 +79,6 @@ jobs:
         env:
           TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
           TF_VAR_public_subnet_ids: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
-          TF_VAR_web_next_public_orchestrator_api_base_url: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
         run: |
           set -euo pipefail
           terraform -chdir=infra/terraform apply -auto-approve -input=false \
@@ -146,7 +145,6 @@ jobs:
         env:
           TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
           TF_VAR_public_subnet_ids: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
-          TF_VAR_web_next_public_orchestrator_api_base_url: ${{ secrets.WEB_NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL }}
         run: |
           set -euo pipefail
           terraform -chdir=infra/terraform apply -auto-approve -input=false \

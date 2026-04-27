@@ -9,7 +9,7 @@ Ingests telemetry events → detects anomalies → retrieves operational context
 - **Capstone project** demonstrating multi-agent orchestration, RAG, MCP, production architecture, and cloud deployment patterns.
 - **Software-only**: No hardware simulation or integration required.
 - **Fast local demo**: Fully runnable on your machine with SQLite persistence and seed data.
-- **Production-ready foundations**: CI/CD, Docker containerization, IaC, JSON schemas, and structured evaluation metrics.
+- **Production-ready foundations**: CI/CD, Docker containerization, IaC, JSON schemas, structured evaluation metrics, and AWS edge/runtime infrastructure.
 
 ## Quick Start
 
@@ -83,7 +83,7 @@ Click **"Simulate thermal incident"** on the dashboard. The system will:
 │     ├─ Planner Agent (recommend actions)
 │     ├─ Verifier Agent (validate recommendations)
 │     ├─ Reporter Agent (compose incident report)
-│     └─ SQLite + JSONL (persistence + seed data)
+│     └─ SQLite or PostgreSQL + JSONL (persistence + seed data)
 ```
 
 - **apps/web** — Authenticated operator dashboard (Next.js, Clerk).
@@ -91,6 +91,14 @@ Click **"Simulate thermal incident"** on the dashboard. The system will:
 - **services/mcp-*** — MCP tool servers exposing telemetry, retrieval, and incident operations.
 - **packages/contracts** — Shared JSON schemas for API contracts.
 - **services/orchestrator/data** — Seed runbooks and telemetry events (JSONL).
+
+Production AWS shape:
+
+- CloudFront + WAF in front of the public web entrypoint.
+- Public ALB for the Next.js web service.
+- HTTP API Gateway + VPC Link in front of an internal orchestrator ALB.
+- ECS Fargate for both web and orchestrator services.
+- PostgreSQL (RDS) for orchestrator persistence in production, while local development stays on SQLite.
 
 ## Documentation
 
@@ -152,6 +160,7 @@ Set real `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` values in `a
 
 Optional orchestrator HTTP settings:
 
+- `FLEET_DATABASE_URL` points the API at PostgreSQL and takes precedence over SQLite when set.
 - `FLEET_DB_PATH` points the SQLite file used by the API (default under `services/orchestrator/data/`).
 - `FLEET_CORS_ORIGINS` is a comma-separated list of allowed browser origins (for example `https://your-web-alb.example.com`). When unset, **no** CORS middleware is registered (fine for server-to-server or local Next.js API routes). When set, the orchestrator sends a tight `Access-Control-Allow-Origin` for those origins—use this when `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` exposes the orchestrator directly to the browser (common with ECS + ALB).
 - `GET /health` returns process up. `GET /ready` returns **200** only when the SQLite parent directory is writable, SQLite answers `SELECT 1`, and the repository can list RAG metadata—useful for load-balancer readiness checks.
@@ -257,7 +266,7 @@ AWS deployment is automated in **`.github/workflows/deploy-aws.yml`**:
 - Push to `main` deploys to the `prod` GitHub Environment.
 - `workflow_dispatch` runs a manual production deploy.
 
-The deploy workflow performs OIDC auth, Terraform init/validate/apply, ECR image build+push for web/orchestrator, a second Terraform apply pinned to the commit SHA image tags, and a post-deploy ALB health check.
+The deploy workflow performs OIDC auth, Terraform init/validate/apply, ECR image build+push for web/orchestrator, a second Terraform apply pinned to the commit SHA image tags, ECS stabilization, and a post-deploy ALB health check. Terraform now provisions the production edge/runtime path: CloudFront, WAF, API Gateway, ECS, and PostgreSQL.
 
 Required GitHub Environment secrets for `prod` deploys:
 

@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -7,15 +8,38 @@ from fleet_health_orchestrator.models import IncidentReport, TelemetryEvent
 
 
 class FleetRepository:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, database_url: str = "") -> None:
         self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.database_url = database_url
+        self._use_postgres = database_url.startswith(("postgres://", "postgresql://"))
+
+        if not self._use_postgres:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    @contextmanager
+    def _connect(self):
+        if self._use_postgres:
+            import psycopg
+            from psycopg.rows import dict_row
+
+            connection = psycopg.connect(self.database_url, row_factory=dict_row)
+        else:
+            connection = sqlite3.connect(self.db_path)
+            connection.row_factory = sqlite3.Row
+
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def _sql(self, sqlite_query: str, postgres_query: str) -> str:
+        return postgres_query if self._use_postgres else sqlite_query
 
     def _init_db(self) -> None:
         with self._connect() as connection:
@@ -27,8 +51,8 @@ class FleetRepository:
                     device_id TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
                     metric TEXT NOT NULL,
-                    value REAL NOT NULL,
-                    threshold REAL NOT NULL,
+                    value DOUBLE PRECISION NOT NULL,
+                    threshold DOUBLE PRECISION NOT NULL,
                     severity TEXT NOT NULL,
                     tags_json TEXT NOT NULL
                 )
@@ -43,25 +67,38 @@ class FleetRepository:
                     summary TEXT NOT NULL,
                     root_cause_hypotheses_json TEXT NOT NULL,
                     recommended_actions_json TEXT NOT NULL,
-                    evidence_json TEXT NOT NULL
+                    evidence_json TEXT NOT NULL,
+                    confidence_score DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                    agent_trace_json TEXT NOT NULL DEFAULT '[]',
+                    verification_json TEXT NOT NULL DEFAULT '{}',
+                    latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0.0
                 )
                 """
             )
-            incident_columns = {
-                row["name"]
-                for row in connection.execute("PRAGMA table_info(incidents)").fetchall()
-            }
+
             optional_columns = {
-                "confidence_score": "REAL NOT NULL DEFAULT 0.0",
+                "confidence_score": "DOUBLE PRECISION NOT NULL DEFAULT 0.0",
                 "agent_trace_json": "TEXT NOT NULL DEFAULT '[]'",
                 "verification_json": "TEXT NOT NULL DEFAULT '{}'",
-                "latency_ms": "REAL NOT NULL DEFAULT 0.0"
+                "latency_ms": "DOUBLE PRECISION NOT NULL DEFAULT 0.0",
             }
-            for column, definition in optional_columns.items():
-                if column not in incident_columns:
+
+            if self._use_postgres:
+                for column, definition in optional_columns.items():
                     connection.execute(
-                        f"ALTER TABLE incidents ADD COLUMN {column} {definition}"
+                        f"ALTER TABLE incidents ADD COLUMN IF NOT EXISTS {column} {definition}"
                     )
+            else:
+                incident_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(incidents)").fetchall()
+                }
+                for column, definition in optional_columns.items():
+                    if column not in incident_columns:
+                        connection.execute(
+                            f"ALTER TABLE incidents ADD COLUMN {column} {definition}"
+                        )
+
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS rag_documents (
@@ -92,11 +129,27 @@ class FleetRepository:
     def insert_event(self, event: TelemetryEvent) -> None:
         with self._connect() as connection:
             connection.execute(
-                """
-                INSERT OR REPLACE INTO events
-                (event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                self._sql(
+                    """
+                    INSERT OR REPLACE INTO events
+                    (event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    """
+                    INSERT INTO events
+                    (event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (event_id) DO UPDATE SET
+                      fleet_id = EXCLUDED.fleet_id,
+                      device_id = EXCLUDED.device_id,
+                      timestamp = EXCLUDED.timestamp,
+                      metric = EXCLUDED.metric,
+                      value = EXCLUDED.value,
+                      threshold = EXCLUDED.threshold,
+                      severity = EXCLUDED.severity,
+                      tags_json = EXCLUDED.tags_json
+                    """,
+                ),
                 (
                     event.event_id,
                     event.fleet_id,
@@ -125,7 +178,7 @@ class FleetRepository:
                 event_id=row["event_id"],
                 fleet_id=row["fleet_id"],
                 device_id=row["device_id"],
-                timestamp=datetime.fromisoformat(row["timestamp"]),
+                timestamp=row["timestamp"] if isinstance(row["timestamp"], datetime) else datetime.fromisoformat(row["timestamp"]),
                 metric=row["metric"],
                 value=row["value"],
                 threshold=row["threshold"],
@@ -138,23 +191,53 @@ class FleetRepository:
     def insert_incident(self, incident: IncidentReport) -> None:
         with self._connect() as connection:
             connection.execute(
-                """
-                INSERT OR REPLACE INTO incidents
-                (
-                    incident_id,
-                    device_id,
-                    status,
-                    summary,
-                    root_cause_hypotheses_json,
-                    recommended_actions_json,
-                    evidence_json,
-                    confidence_score,
-                    agent_trace_json,
-                    verification_json,
-                    latency_ms
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                self._sql(
+                    """
+                    INSERT OR REPLACE INTO incidents
+                    (
+                        incident_id,
+                        device_id,
+                        status,
+                        summary,
+                        root_cause_hypotheses_json,
+                        recommended_actions_json,
+                        evidence_json,
+                        confidence_score,
+                        agent_trace_json,
+                        verification_json,
+                        latency_ms
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    """
+                    INSERT INTO incidents
+                    (
+                        incident_id,
+                        device_id,
+                        status,
+                        summary,
+                        root_cause_hypotheses_json,
+                        recommended_actions_json,
+                        evidence_json,
+                        confidence_score,
+                        agent_trace_json,
+                        verification_json,
+                        latency_ms
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (incident_id) DO UPDATE SET
+                      device_id = EXCLUDED.device_id,
+                      status = EXCLUDED.status,
+                      summary = EXCLUDED.summary,
+                      root_cause_hypotheses_json = EXCLUDED.root_cause_hypotheses_json,
+                      recommended_actions_json = EXCLUDED.recommended_actions_json,
+                      evidence_json = EXCLUDED.evidence_json,
+                      confidence_score = EXCLUDED.confidence_score,
+                      agent_trace_json = EXCLUDED.agent_trace_json,
+                      verification_json = EXCLUDED.verification_json,
+                      latency_ms = EXCLUDED.latency_ms
+                    """,
+                ),
                 (
                     incident.incident_id,
                     incident.device_id,
@@ -205,11 +288,18 @@ class FleetRepository:
     ) -> IncidentReport | None:
         with self._connect() as connection:
             cursor = connection.execute(
-                """
-                UPDATE incidents
-                SET status = ?
-                WHERE incident_id = ?
-                """,
+                self._sql(
+                    """
+                    UPDATE incidents
+                    SET status = ?
+                    WHERE incident_id = ?
+                    """,
+                    """
+                    UPDATE incidents
+                    SET status = %s
+                    WHERE incident_id = %s
+                    """,
+                ),
                 (status, incident_id)
             )
             row_count = cursor.rowcount
@@ -229,11 +319,23 @@ class FleetRepository:
     ) -> None:
         with self._connect() as connection:
             connection.execute(
-                """
-                INSERT OR REPLACE INTO rag_documents
-                (document_id, source, title, content, tags_json)
-                VALUES (?, ?, ?, ?, ?)
-                """,
+                self._sql(
+                    """
+                    INSERT OR REPLACE INTO rag_documents
+                    (document_id, source, title, content, tags_json)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    """
+                    INSERT INTO rag_documents
+                    (document_id, source, title, content, tags_json)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (document_id) DO UPDATE SET
+                      source = EXCLUDED.source,
+                      title = EXCLUDED.title,
+                      content = EXCLUDED.content,
+                      tags_json = EXCLUDED.tags_json
+                    """,
+                ),
                 (
                     document_id,
                     source,

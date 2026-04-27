@@ -1,7 +1,18 @@
 locals {
   orchestrator_data_mount_path = "/data"
-  orchestrator_efs_enabled     = var.enable_ecs && var.enable_orchestrator_efs
+  postgres_enabled             = var.enable_ecs && var.enable_postgres
+  orchestrator_efs_enabled     = var.enable_ecs && var.enable_orchestrator_efs && !local.postgres_enabled
   orchestrator_db_path         = local.orchestrator_efs_enabled ? "${local.orchestrator_data_mount_path}/fleet-health.db" : lookup(var.orchestrator_environment, "FLEET_DB_PATH", "/tmp/fleet-health.db")
+  web_orchestrator_api_base_url = (
+    var.enable_api_gateway
+    ? aws_apigatewayv2_stage.orchestrator_default[0].invoke_url
+    : "http://orchestrator.${local.name_prefix}.local:8000"
+  )
+  public_orchestrator_api_base_url = (
+    var.web_next_public_orchestrator_api_base_url != ""
+    ? var.web_next_public_orchestrator_api_base_url
+    : (var.enable_api_gateway ? aws_apigatewayv2_stage.orchestrator_default[0].invoke_url : "")
+  )
 
   # When ECS and S3 Vectors RAG are both enabled, inject vector settings into the orchestrator task.
   orchestrator_s3_vectors_env = (var.enable_ecs && var.enable_s3_vectors_rag) ? {
@@ -30,8 +41,8 @@ locals {
           NODE_ENV                              = "production"
           HOSTNAME                              = "0.0.0.0"
           PORT                                  = "3000"
-          ORCHESTRATOR_API_BASE_URL             = "http://orchestrator.${local.name_prefix}.local:8000"
-          NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL = var.web_next_public_orchestrator_api_base_url
+          ORCHESTRATOR_API_BASE_URL             = local.web_orchestrator_api_base_url
+          NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL = local.public_orchestrator_api_base_url
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY     = var.web_next_public_clerk_publishable_key
         }
       )
@@ -45,21 +56,28 @@ locals {
       log_group = "/ecs/${local.name_prefix}/orchestrator"
       environment = merge(
         var.orchestrator_environment,
-        { FLEET_DB_PATH = local.orchestrator_db_path },
+        local.postgres_enabled ? {} : { FLEET_DB_PATH = local.orchestrator_db_path },
         local.orchestrator_s3_vectors_env
       )
-      secrets = var.orchestrator_secret_arns
+      secrets = merge(local.managed_orchestrator_secret_arns, var.orchestrator_secret_arns)
     }
   }
 
   ecs_service_map = var.enable_ecs ? local.ecs_services : {}
-  ecs_secret_arns = distinct(concat(values(local.managed_web_secret_arns), values(var.web_secret_arns), values(var.orchestrator_secret_arns)))
+  ecs_secret_arns = distinct(concat(values(local.managed_web_secret_arns), values(local.managed_orchestrator_secret_arns), values(var.web_secret_arns), values(var.orchestrator_secret_arns)))
   # Must not depend on secret ARNs (unknown until apply) or count on ecs_task_secret_access breaks at plan.
   ecs_secret_enabled = var.enable_ecs && (
     (var.enable_managed_secrets && length(setintersection(var.managed_secret_names, local.managed_web_secret_names)) > 0) ||
+    var.enable_postgres ||
     length(var.web_secret_arns) > 0 ||
     length(var.orchestrator_secret_arns) > 0
   )
+}
+
+data "aws_vpc" "selected" {
+  count = var.enable_ecs ? 1 : 0
+
+  id = var.vpc_id
 }
 
 data "aws_iam_policy_document" "ecs_tasks_assume_role" {
@@ -258,11 +276,14 @@ resource "aws_security_group" "orchestrator" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "Orchestrator traffic from web tasks"
-    from_port       = local.ecs_services.orchestrator.port
-    to_port         = local.ecs_services.orchestrator.port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.web[0].id]
+    description = "Orchestrator traffic from web tasks and internal ingress"
+    from_port   = local.ecs_services.orchestrator.port
+    to_port     = local.ecs_services.orchestrator.port
+    protocol    = "tcp"
+    security_groups = compact(concat(
+      [aws_security_group.web[0].id],
+      var.enable_api_gateway ? [aws_security_group.orchestrator_alb[0].id] : []
+    ))
   }
 
   egress {
@@ -392,6 +413,79 @@ resource "aws_lb_target_group" "web" {
   tags = local.common_tags
 }
 
+resource "aws_security_group" "orchestrator_alb" {
+  count = var.enable_api_gateway ? 1 : 0
+
+  name        = "${local.name_prefix}-orchestrator-alb"
+  description = "Allow API Gateway VPC link traffic to the internal orchestrator ALB."
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description     = "HTTP from API Gateway VPC link"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.apigateway_vpc_link[0].id]
+  }
+
+  egress {
+    description = "Outbound to orchestrator tasks"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_lb" "orchestrator" {
+  count = var.enable_api_gateway ? 1 : 0
+
+  name               = substr("${local.name_prefix}-orchestrator", 0, 32)
+  internal           = true
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.orchestrator_alb[0].id]
+  subnets            = var.public_subnet_ids
+
+  tags = local.common_tags
+}
+
+resource "aws_lb_target_group" "orchestrator" {
+  count = var.enable_api_gateway ? 1 : 0
+
+  name        = substr("${local.name_prefix}-orch", 0, 32)
+  port        = local.ecs_services.orchestrator.port
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = var.vpc_id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200-399"
+    path                = "/health"
+    timeout             = 5
+    unhealthy_threshold = 3
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_lb_listener" "orchestrator_http" {
+  count = var.enable_api_gateway ? 1 : 0
+
+  load_balancer_arn = aws_lb.orchestrator[0].arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.orchestrator[0].arn
+  }
+}
+
 resource "aws_lb_listener" "web_http" {
   count = var.enable_ecs ? 1 : 0
 
@@ -510,6 +604,16 @@ resource "aws_ecs_service" "service" {
     }
   }
 
+  dynamic "load_balancer" {
+    for_each = each.key == "orchestrator" && var.enable_api_gateway ? [1] : []
+
+    content {
+      target_group_arn = aws_lb_target_group.orchestrator[0].arn
+      container_name   = each.key
+      container_port   = each.value.port
+    }
+  }
+
   dynamic "service_registries" {
     for_each = each.key == "orchestrator" ? [1] : []
 
@@ -521,6 +625,7 @@ resource "aws_ecs_service" "service" {
   depends_on = [
     aws_efs_mount_target.orchestrator,
     aws_lb_listener.web_http,
+    aws_lb_listener.orchestrator_http,
     aws_iam_role_policy_attachment.ecs_task_execution,
     aws_iam_role_policy.ecs_task_efs_access
   ]

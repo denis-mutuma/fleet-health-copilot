@@ -51,11 +51,21 @@ class OrchestratorSettings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     # === Database Configuration ===
+    database_url: str = Field(
+        default="",
+        description="Database connection URL (preferred for PostgreSQL in production)",
+        validation_alias=AliasChoices("DATABASE_URL", "FLEET_DATABASE_URL"),
+    )
     database_path: Path = Field(
         default_factory=lambda: Path(__file__).resolve().parents[2] / "data" / "fleet_health.db",
         description="Path to SQLite database file",
         validation_alias=AliasChoices("DATABASE_PATH", "FLEET_DB_PATH"),
     )
+
+    @property
+    def database_target(self) -> str:
+        """Return the active database target for logging and diagnostics."""
+        return self.database_url or str(self.database_path)
 
     # === Retrieval Backend Configuration ===
     retrieval_backend: str = Field(
@@ -144,7 +154,7 @@ class OrchestratorSettings(BaseSettings):
         """Return configuration summary for logging (excluding secrets)."""
         return (
             f"OrchestratorSettings("
-            f"database={self.database_path}, "
+            f"database={self.database_target}, "
             f"retrieval_backend={self.retrieval_backend}, "
             f"log_level={self.log_level}"
             f")"

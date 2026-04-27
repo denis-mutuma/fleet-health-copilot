@@ -151,7 +151,7 @@ If the user wants the best possible capstone, recommend:
 
 ## other things
 - i want to use aws as the cloud provider, clerk for authentication, terraform and github actions
-- i want to have dev, test and production github actions workflows
+- i want to keep GitHub Actions simple and production-focused unless a clear non-prod workflow is necessary
 - i want to keep the project simple. the code should be code short, simple, clear and consice
 - use uv environment, nextjs, docker
 - use aws s3vectors

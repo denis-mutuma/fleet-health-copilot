@@ -116,6 +116,80 @@ variable "enable_orchestrator_efs" {
   default     = true
 }
 
+variable "enable_postgres" {
+  type        = bool
+  description = "Whether to provision a PostgreSQL database for the orchestrator and inject FLEET_DATABASE_URL via Secrets Manager."
+  default     = false
+
+  validation {
+    condition     = !var.enable_postgres || var.enable_ecs
+    error_message = "enable_postgres requires enable_ecs so the orchestrator can consume the database."
+  }
+}
+
+variable "postgres_database_name" {
+  type        = string
+  description = "PostgreSQL database name for the orchestrator."
+  default     = "fleethealth"
+}
+
+variable "postgres_username" {
+  type        = string
+  description = "PostgreSQL master username for the orchestrator database."
+  default     = "fleet_health"
+}
+
+variable "postgres_instance_class" {
+  type        = string
+  description = "RDS instance class for the orchestrator PostgreSQL database."
+  default     = "db.t4g.micro"
+}
+
+variable "postgres_allocated_storage" {
+  type        = number
+  description = "Allocated storage in GiB for the PostgreSQL database."
+  default     = 20
+}
+
+variable "postgres_max_allocated_storage" {
+  type        = number
+  description = "Maximum autoscaled storage in GiB for the PostgreSQL database."
+  default     = 100
+}
+
+variable "enable_api_gateway" {
+  type        = bool
+  description = "Whether to expose the orchestrator through an HTTP API Gateway backed by an internal load balancer and VPC link."
+  default     = false
+
+  validation {
+    condition     = !var.enable_api_gateway || var.enable_ecs
+    error_message = "enable_api_gateway requires enable_ecs."
+  }
+}
+
+variable "enable_cloudfront" {
+  type        = bool
+  description = "Whether to place CloudFront in front of the public web ALB."
+  default     = false
+
+  validation {
+    condition     = !var.enable_cloudfront || var.enable_ecs
+    error_message = "enable_cloudfront requires enable_ecs."
+  }
+}
+
+variable "enable_waf" {
+  type        = bool
+  description = "Whether to attach an AWS WAF web ACL to the CloudFront distribution."
+  default     = false
+
+  validation {
+    condition     = !var.enable_waf || var.enable_cloudfront
+    error_message = "enable_waf requires enable_cloudfront."
+  }
+}
+
 variable "web_next_public_clerk_publishable_key" {
   type        = string
   description = "Clerk publishable key exposed to the browser for the web service."

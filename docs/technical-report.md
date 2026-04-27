@@ -40,13 +40,13 @@ Non-goals for the current MVP:
 The current system includes:
 
 - `apps/web`: Next.js dashboard protected by Clerk.
-- `services/orchestrator`: FastAPI service for events, incidents, RAG search, orchestration, metrics, and SQLite persistence.
+- `services/orchestrator`: FastAPI service for events, incidents, RAG search, orchestration, metrics, and SQLite/PostgreSQL persistence.
 - `services/mcp-telemetry`: MCP tool server for querying telemetry events.
 - `services/mcp-retrieval`: MCP tool server for searching operational context.
 - `services/mcp-incidents`: MCP tool server for creating and reading incident reports.
 - `services/orchestrator/data`: JSONL seed data for demo runbooks, incident history, and telemetry events.
 - `.github/workflows/deploy-aws.yml`: Production deployment workflow.
-- `infra/terraform`: AWS environment scaffold for production deployment.
+- `infra/terraform`: AWS environment scaffold for production deployment, including CloudFront, WAF, API Gateway, ECS, and PostgreSQL.
 
 ## Agent Design
 
@@ -144,7 +144,7 @@ Completed hardening:
 Known remaining gaps:
 
 - S3 Vectors **ANN quality** still depends on using the same **`FLEET_EMBEDDING_PROVIDER`** (e.g. `openai`, `http`, `sentence_transformers`) and dimension for both [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) and live queries; the default `hash` provider is deterministic only (the API logs a warning when `s3vectors` + hash). See [s3-vectors-operations.md](s3-vectors-operations.md).
-- Deploys are automated through `.github/workflows/deploy-aws.yml` for `main` (prod), including Terraform apply and ECR image publishing. Environment secrets and networking inputs (VPC/subnets/URLs) still need to be provided in the `prod` GitHub Environment; managed RDS remains out of scope.
+- Deploys are automated through `.github/workflows/deploy-aws.yml` for `main` (prod), including Terraform apply and ECR image publishing. Environment secrets and networking inputs (VPC/subnets) still need to be provided in the `prod` GitHub Environment; Terraform now provisions PostgreSQL, API Gateway, CloudFront, and WAF as part of the production path.
 - Agents remain **deterministic for planning and verification**; optional OpenAI **summary refine** and **diagnosis enrichment** exist behind env flags ([`llm.py`](../services/orchestrator/src/fleet_health_orchestrator/llm.py)); there is no LLM-authored action list outside verifier rules.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
 
@@ -167,6 +167,6 @@ Recommended next implementation steps:
 
 1. Configure **`FLEET_EMBEDDING_PROVIDER`** and dimension consistently for S3 Vectors **query** and **`index_s3_vectors.py`** ingestion so ANN matches production vectors (see [s3-vectors-operations.md](s3-vectors-operations.md)).
 2. Deepen diagnosis or verifier grounding against retrieved evidence, or introduce optional LLM-backed variants.
-3. Validate the `deploy-aws.yml` path in production (state backend, IAM, and first green ECS path).
+3. Validate the full production path in AWS, including API Gateway routing, PostgreSQL connectivity, and CloudFront behavior.
 4. Expand the evaluation dataset beyond the current small seed set.
-5. Extend CI to include MCP tests and optional Terraform validation once the workflow requirements are finalized.
+5. Add custom domain, ACM, and Route 53 wiring for a polished public entrypoint.

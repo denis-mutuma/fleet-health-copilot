@@ -30,6 +30,26 @@ output "web_load_balancer_dns_name" {
   description = "Public DNS name for the web application load balancer when ECS is enabled."
 }
 
+output "orchestrator_internal_load_balancer_dns_name" {
+  value       = var.enable_api_gateway ? aws_lb.orchestrator[0].dns_name : null
+  description = "Internal DNS name for the orchestrator ALB when API Gateway is enabled."
+}
+
+output "orchestrator_api_gateway_url" {
+  value       = var.enable_api_gateway ? aws_apigatewayv2_stage.orchestrator_default[0].invoke_url : null
+  description = "Invoke URL for the orchestrator API Gateway when enabled."
+}
+
+output "web_cloudfront_domain_name" {
+  value       = var.enable_cloudfront ? aws_cloudfront_distribution.web[0].domain_name : null
+  description = "CloudFront distribution domain for the web application when enabled."
+}
+
+output "web_public_entrypoint_url" {
+  value       = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.web[0].domain_name}" : (var.enable_ecs ? "http://${aws_lb.web[0].dns_name}" : null)
+  description = "Preferred public entrypoint URL for the deployed web application."
+}
+
 output "orchestrator_service_discovery_name" {
   value       = var.enable_ecs ? "orchestrator.${aws_service_discovery_private_dns_namespace.main[0].name}" : null
   description = "Private DNS name for the orchestrator service when ECS is enabled."
@@ -43,6 +63,21 @@ output "orchestrator_efs_file_system_id" {
 output "orchestrator_database_path" {
   value       = var.enable_ecs ? local.orchestrator_db_path : null
   description = "Database path configured for the orchestrator task when ECS is enabled."
+}
+
+output "postgres_endpoint" {
+  value       = var.enable_postgres ? aws_db_instance.orchestrator[0].address : null
+  description = "PostgreSQL endpoint hostname when enable_postgres is true."
+}
+
+output "postgres_database_name" {
+  value       = var.enable_postgres ? aws_db_instance.orchestrator[0].db_name : null
+  description = "PostgreSQL database name when enable_postgres is true."
+}
+
+output "postgres_database_url_secret_arn" {
+  value       = var.enable_postgres ? aws_secretsmanager_secret.postgres_database_url[0].arn : null
+  description = "Secrets Manager ARN containing the orchestrator FLEET_DATABASE_URL when enable_postgres is true."
 }
 
 output "s3_vectors_bucket_name" {

@@ -201,8 +201,8 @@ jobs:
           fi
 
           for i in $(seq 1 10); do
-            code=$(curl -k -o /dev/null -s -w "%{http_code}" "http://${alb}/" || true)
-            if [ "${code}" = "200" ] || [ "${code}" = "302" ] || [ "${code}" = "307" ]; then
+            code=$(curl -k -o /dev/null -s -w "%{http_code}" "http://${alb}/health" || true)
+            if [ "${code}" = "200" ]; then
               echo "ALB health check passed with HTTP ${code}"
               exit 0
             fi

@@ -406,7 +406,7 @@ resource "aws_lb_target_group" "web" {
     healthy_threshold   = 2
     interval            = 30
     matcher             = "200-399"
-    path                = "/"
+    path                = "/health"
     timeout             = 5
     unhealthy_threshold = 3
   }

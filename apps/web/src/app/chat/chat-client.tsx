@@ -18,6 +18,8 @@ interface IncidentItem {
 type ToolCall = NonNullable<ChatMessage["tool_calls"]>[number];
 type TraceSpan = NonNullable<ChatMessage["trace_spans"]>[number];
 
+const TOOL_PAYLOAD_PREVIEW_MAX_CHARS = 1200;
+
 const QUICK_ACTIONS = [
   { label: "List incidents", prompt: "/list incidents" },
   { label: "Run simulation", prompt: "/simulate" },
@@ -302,9 +304,81 @@ function prettifyToolName(name: string): string {
   return name.replaceAll("_", " ");
 }
 
+function parseFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function formatJsonPreview(value: unknown, maxChars = TOOL_PAYLOAD_PREVIEW_MAX_CHARS): {
+  text: string;
+  truncated: boolean;
+} {
+  const serialized = JSON.stringify(value, null, 2) ?? "{}";
+  if (serialized.length <= maxChars) {
+    return { text: serialized, truncated: false };
+  }
+  return {
+    text: `${serialized.slice(0, maxChars)}\n... (truncated)`,
+    truncated: true,
+  };
+}
+
+function tokenUsageFromSpans(traceSpans: TraceSpan[]): {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+} | null {
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+  let hasUsage = false;
+
+  for (const span of traceSpans) {
+    if (span.span_name !== "openai.chat.completion") {
+      continue;
+    }
+    const metadata = span.metadata;
+    const prompt = parseFiniteNumber(metadata.prompt_tokens);
+    const completion = parseFiniteNumber(metadata.completion_tokens);
+    const total = parseFiniteNumber(metadata.total_tokens);
+
+    if (prompt != null) {
+      promptTokens += prompt;
+      hasUsage = true;
+    }
+    if (completion != null) {
+      completionTokens += completion;
+      hasUsage = true;
+    }
+    if (total != null) {
+      totalTokens += total;
+      hasUsage = true;
+    }
+  }
+
+  if (!hasUsage) {
+    return null;
+  }
+
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+  };
+}
+
 function TraceDetails({ message }: { message: ChatMessage }) {
   const toolCalls = message.tool_calls ?? [];
   const traceSpans = message.trace_spans ?? [];
+  const tokenUsage = tokenUsageFromSpans(traceSpans);
   const showMeta = toolCalls.length > 0 || traceSpans.length > 0 || message.llm_cost_usd != null;
 
   if (!showMeta) {
@@ -328,6 +402,17 @@ function TraceDetails({ message }: { message: ChatMessage }) {
         </div>
       ) : null}
 
+      {tokenUsage ? (
+        <div className="chat-trace-block">
+          <p className="chat-action-label">Token usage</p>
+          <div className="chat-trace-metrics">
+            <span>Prompt: {tokenUsage.promptTokens.toLocaleString()}</span>
+            <span>Completion: {tokenUsage.completionTokens.toLocaleString()}</span>
+            <span>Total: {tokenUsage.totalTokens.toLocaleString()}</span>
+          </div>
+        </div>
+      ) : null}
+
       {toolCalls.length > 0 ? (
         <div className="chat-trace-block">
           <p className="chat-action-label">Tool calls</p>
@@ -339,7 +424,17 @@ function TraceDetails({ message }: { message: ChatMessage }) {
                   <span className="score-pill">{Math.round(toolCall.latency_ms)} ms</span>
                 </div>
                 {toolCall.error ? <p className="error">{toolCall.error}</p> : null}
-                <pre>{JSON.stringify(toolCall.input, null, 2)}</pre>
+                {(() => {
+                  const preview = formatJsonPreview(toolCall.input);
+                  return (
+                    <>
+                      <p className="chat-trace-inline">
+                        Input payload{preview.truncated ? " (truncated)" : ""}
+                      </p>
+                      <pre>{preview.text}</pre>
+                    </>
+                  );
+                })()}
               </li>
             ))}
           </ul>

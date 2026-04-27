@@ -894,6 +894,22 @@ select:focus-visible {
   font-size: 0.86rem;
 }
 
+.chat-trace-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.chat-trace-metrics span {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  background: rgb(255 255 255 / 0.9);
+}
+
 .chat-trace-list pre {
   margin: 0;
   padding: 10px 12px;

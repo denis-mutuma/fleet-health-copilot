@@ -586,6 +586,10 @@ resource "aws_ecs_service" "service" {
   task_definition = aws_ecs_task_definition.service[each.key].arn
   desired_count   = var.ecs_desired_count
   launch_type     = "FARGATE"
+  # Give new tasks time to boot before ALB health checks can mark them unhealthy.
+  health_check_grace_period_seconds = (
+    (each.key == "web") || (each.key == "orchestrator" && var.enable_api_gateway)
+  ) ? 300 : null
 
   network_configuration {
     assign_public_ip = true

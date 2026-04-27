@@ -119,6 +119,11 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_except_host_header" {
   name  = "Managed-AllViewerExceptHostHeader"
 }
 
+data "aws_cloudfront_origin_request_policy" "all_viewer" {
+  count = var.enable_cloudfront ? 1 : 0
+  name  = "Managed-AllViewer"
+}
+
 resource "aws_wafv2_web_acl" "cloudfront" {
   count = var.enable_waf ? 1 : 0
 
@@ -210,7 +215,7 @@ resource "aws_cloudfront_distribution" "web" {
     cached_methods           = ["GET", "HEAD", "OPTIONS"]
     compress                 = true
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled[0].id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header[0].id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer[0].id
   }
 
   ordered_cache_behavior {

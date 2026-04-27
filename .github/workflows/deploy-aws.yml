@@ -25,11 +25,12 @@ jobs:
           TF_LOCK_TABLE: ${{ secrets.TF_LOCK_TABLE }}
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           VPC_ID: ${{ secrets.VPC_ID }}
           PUBLIC_SUBNET_IDS_JSON: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
         run: |
           set -euo pipefail
-          for name in AWS_ROLE_ARN TF_STATE_BUCKET TF_LOCK_TABLE NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY VPC_ID PUBLIC_SUBNET_IDS_JSON; do
+          for name in AWS_ROLE_ARN TF_STATE_BUCKET TF_LOCK_TABLE NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY OPENAI_API_KEY VPC_ID PUBLIC_SUBNET_IDS_JSON; do
             eval "val=\${$name:-}"
             if [ -z "${val}" ]; then
               echo "Missing required environment secret: ${name}" >&2
@@ -101,6 +102,21 @@ jobs:
           aws secretsmanager put-secret-value \
             --secret-id "${secret_arn}" \
             --secret-string "${CLERK_SECRET_KEY}" >/dev/null
+
+      - name: Ensure OpenAI runtime secret value is set
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          secret_arn=$(terraform -chdir=infra/terraform output -json managed_secret_arns | jq -r '."OPENAI_API_KEY" // empty')
+          if [ -z "${secret_arn}" ]; then
+            echo "Unable to resolve managed secret ARN for OPENAI_API_KEY" >&2
+            exit 1
+          fi
+
+          aws secretsmanager put-secret-value \
+            --secret-id "${secret_arn}" \
+            --secret-string "${OPENAI_API_KEY}" >/dev/null
 
       - name: Resolve ECR repository URLs
         id: ecr

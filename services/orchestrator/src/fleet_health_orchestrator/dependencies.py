@@ -61,11 +61,15 @@ def initialize_dependencies() -> AppDependencies:
             s3_vectors_index_arn=settings.s3_vectors_index_arn,
             s3_vectors_embedding_dimension=settings.s3_vectors_embedding_dimension,
             s3_vectors_query_vector_json=settings.s3_vectors_query_vector_json,
-            embedding_provider=settings.embedding_provider,
+            embedding_provider=settings.effective_embedding_provider,
         )
-        logger.info("Retrieval backend initialized: %s", settings.retrieval_backend)
+        logger.info(
+            "Retrieval backend initialized: %s (embedding provider: %s)",
+            settings.retrieval_backend,
+            settings.effective_embedding_provider,
+        )
 
-        if settings.retrieval_backend.lower() == "s3vectors" and settings.embedding_provider.lower() in (
+        if settings.retrieval_backend.lower() == "s3vectors" and settings.effective_embedding_provider.lower() in (
             "hash",
             "deterministic",
             "pseudo",

@@ -64,7 +64,7 @@ variable "enable_managed_secrets" {
 variable "managed_secret_names" {
   type        = set(string)
   description = "Runtime secret environment variable names to create as AWS Secrets Manager placeholders. Values are populated outside Terraform."
-  default     = ["CLERK_SECRET_KEY"]
+  default     = ["CLERK_SECRET_KEY", "OPENAI_API_KEY"]
 }
 
 variable "enable_ecs" {

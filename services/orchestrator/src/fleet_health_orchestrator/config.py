@@ -143,6 +143,12 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("LLM_DIAGNOSIS_MODEL", "FLEET_OPENAI_DIAGNOSIS_MODEL"),
     )
 
+    openai_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="OpenAI embedding model for retrieval and indexing",
+        validation_alias=AliasChoices("OPENAI_EMBEDDING_MODEL", "FLEET_OPENAI_EMBEDDING_MODEL"),
+    )
+
     # === Logging Configuration ===
     log_level: str = Field(
         default="INFO",
@@ -150,12 +156,36 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("LOG_LEVEL", "FLEET_LOG_LEVEL"),
     )
 
+    @property
+    def llm_enabled(self) -> bool:
+        """Return whether OpenAI-backed LLM features are available."""
+        return bool(self.openai_api_key.strip())
+
+    @property
+    def effective_embedding_provider(self) -> str:
+        """Prefer OpenAI embeddings when an API key is present and provider is unset/hash."""
+        provider = self.embedding_provider.strip().lower()
+        if self.llm_enabled and provider in ("", "hash", "deterministic", "pseudo"):
+            return "openai"
+        return provider or "hash"
+
+    @property
+    def effective_llm_report_refine_enabled(self) -> bool:
+        """Auto-enable report refinement when OpenAI is configured."""
+        return self.llm_report_refine_enabled or self.llm_enabled
+
+    @property
+    def effective_llm_diagnosis_enrich_enabled(self) -> bool:
+        """Auto-enable diagnosis enrichment when OpenAI is configured."""
+        return self.llm_diagnosis_enrich_enabled or self.llm_enabled
+
     def __str__(self) -> str:
         """Return configuration summary for logging (excluding secrets)."""
         return (
             f"OrchestratorSettings("
             f"database={self.database_target}, "
             f"retrieval_backend={self.retrieval_backend}, "
+            f"embedding_provider={self.effective_embedding_provider}, "
             f"log_level={self.log_level}"
             f")"
         )

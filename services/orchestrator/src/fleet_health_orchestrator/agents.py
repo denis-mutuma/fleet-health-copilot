@@ -1,9 +1,16 @@
 from dataclasses import dataclass, field
+from contextlib import nullcontext
 from time import perf_counter
 from uuid import uuid4
 
 from fleet_health_orchestrator.exceptions import AnomalyThresholdError
-from fleet_health_orchestrator.llm import enrich_diagnosis_hypotheses, refine_incident_summary
+from fleet_health_orchestrator.llm import (
+    enrich_diagnosis_hypotheses,
+    generate_action_plan,
+    generate_diagnosis_hypotheses,
+    openai_trace,
+    refine_incident_summary,
+)
 from fleet_health_orchestrator.models import IncidentReport, RetrievalHit, TelemetryEvent
 from fleet_health_orchestrator.rag import LexicalRetrievalBackend, RetrievalBackend
 
@@ -53,52 +60,56 @@ class RetrieverAgent:
 @dataclass
 class DiagnosisAgent:
     def diagnose(self, event: TelemetryEvent, hits: list[RetrievalHit]) -> DiagnosisResult:
-        hypotheses: list[str] = []
-        tags = set(event.tags)
+        with openai_trace("fleet-health.agent.diagnosis"):
+            hypotheses = generate_diagnosis_hypotheses(event, hits)
+            tags = set(event.tags)
 
-        if "cpu" in tags or "cpu" in event.metric:
-            hypotheses.extend(["thermal throttling risk", "cooling subsystem stress"])
-        elif "battery" in tags or "thermal" in tags:
-            hypotheses.extend(["cooling degradation", "ambient overload"])
-        elif "motor" in tags or "current" in tags:
-            hypotheses.extend(["mechanical resistance", "load profile drift"])
-        else:
-            hypotheses.append(f"{event.metric} threshold excursion")
+            if not hypotheses:
+                if "cpu" in tags or "cpu" in event.metric:
+                    hypotheses.extend(["thermal throttling risk", "cooling subsystem stress"])
+                elif "battery" in tags or "thermal" in tags:
+                    hypotheses.extend(["cooling degradation", "ambient overload"])
+                elif "motor" in tags or "current" in tags:
+                    hypotheses.extend(["mechanical resistance", "load profile drift"])
+                else:
+                    hypotheses.append(f"{event.metric} threshold excursion")
 
-        if any(hit.source == "incident" for hit in hits):
-            hypotheses.append("repeat pattern from prior incident history")
+            if any(hit.source == "incident" for hit in hits):
+                hypotheses.append("repeat pattern from prior incident history")
 
-        for hit in hits[:3]:
-            if hit.title.strip():
-                hypotheses.append(f"retrieved context: {hit.title.strip()}")
+            for hit in hits[:3]:
+                if hit.title.strip():
+                    hypotheses.append(f"retrieved context: {hit.title.strip()}")
 
-        hypotheses = list(dict.fromkeys(hypotheses))
-        hypotheses.extend(enrich_diagnosis_hypotheses(event, hits, hypotheses))
-        hypotheses = list(dict.fromkeys(hypotheses))
-        confidence_score = min(0.95, 0.55 + (0.1 * len(hits)))
-        return DiagnosisResult(
-            hypotheses=hypotheses,
-            confidence_score=round(confidence_score, 2)
-        )
+            hypotheses = list(dict.fromkeys(hypotheses))
+            hypotheses.extend(enrich_diagnosis_hypotheses(event, hits, hypotheses))
+            hypotheses = list(dict.fromkeys(hypotheses))
+            confidence_score = min(0.95, 0.55 + (0.1 * len(hits)))
+            return DiagnosisResult(
+                hypotheses=hypotheses,
+                confidence_score=round(confidence_score, 2)
+            )
 
 
 @dataclass
 class PlannerAgent:
-    def plan(self, hits: list[RetrievalHit]) -> PlanResult:
+    def plan(self, event: TelemetryEvent, hits: list[RetrievalHit]) -> PlanResult:
         runbook_hits = [hit for hit in hits if hit.source == "runbook"]
-        actions: list[str] = []
+        with openai_trace("fleet-health.agent.planner"):
+            actions = generate_action_plan(event, runbook_hits)
 
-        for hit in runbook_hits[:2]:
-            first_sentence = hit.excerpt.split(".")[0].strip()
-            if first_sentence:
-                actions.append(f"Follow {hit.document_id}: {first_sentence}.")
+            if not actions:
+                for hit in runbook_hits[:2]:
+                    first_sentence = hit.excerpt.split(".")[0].strip()
+                    if first_sentence:
+                        actions.append(f"Follow {hit.document_id}: {first_sentence}.")
 
-        return PlanResult(
-            actions=actions or [
-                "Review recent telemetry for repeated threshold crossings",
-                "Have an operator inspect the device before returning to normal duty cycle"
-            ]
-        )
+            return PlanResult(
+                actions=actions or [
+                    "Review recent telemetry for repeated threshold crossings",
+                    "Have an operator inspect the device before returning to normal duty cycle"
+                ]
+            )
 
 
 @dataclass
@@ -192,18 +203,28 @@ class AgentOrchestrator:
 
     def execute(self, event: TelemetryEvent, rag_documents: list[dict[str, object]]) -> IncidentReport:
         started_at = perf_counter()
-        if not self.monitor.detect_anomaly(event):
-            raise AnomalyThresholdError()
-        retrieved_context = self.retriever.retrieve(event=event, rag_documents=rag_documents)
-        diagnosis = self.diagnosis.diagnose(event=event, hits=retrieved_context)
-        plan = self.planner.plan(hits=retrieved_context)
-        verification = self.verifier.verify(plan=plan, hits=retrieved_context)
-        latency_ms = (perf_counter() - started_at) * 1000
-        return self.reporter.compose(
-            event=event,
-            hits=retrieved_context,
-            diagnosis=diagnosis,
-            plan=plan,
-            verification=verification,
-            latency_ms=latency_ms
+        trace_context = openai_trace(
+            "fleet-health.pipeline",
+            metadata={
+                "device_id": event.device_id,
+                "fleet_id": event.fleet_id,
+                "metric": event.metric,
+                "severity": event.severity,
+            },
         )
+        with trace_context if trace_context is not None else nullcontext():
+            if not self.monitor.detect_anomaly(event):
+                raise AnomalyThresholdError()
+            retrieved_context = self.retriever.retrieve(event=event, rag_documents=rag_documents)
+            diagnosis = self.diagnosis.diagnose(event=event, hits=retrieved_context)
+            plan = self.planner.plan(event=event, hits=retrieved_context)
+            verification = self.verifier.verify(plan=plan, hits=retrieved_context)
+            latency_ms = (perf_counter() - started_at) * 1000
+            return self.reporter.compose(
+                event=event,
+                hits=retrieved_context,
+                diagnosis=diagnosis,
+                plan=plan,
+                verification=verification,
+                latency_ms=latency_ms,
+            )

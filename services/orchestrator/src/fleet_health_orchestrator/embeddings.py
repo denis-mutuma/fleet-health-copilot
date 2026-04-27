@@ -5,9 +5,17 @@ from __future__ import annotations
 import hashlib
 import os
 from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any
 
 import httpx
+from openai import OpenAI
+
+try:
+    from openai import trace as openai_trace
+except ImportError:  # pragma: no cover - older SDK fallback
+    def openai_trace(*_args: object, **_kwargs: object):
+        return nullcontext()
 
 
 def hash_embedding(text: str, dimension: int) -> list[float]:
@@ -30,21 +38,12 @@ def hash_embedding(text: str, dimension: int) -> list[float]:
 
 
 def _openai_embedding(text: str, *, model: str, api_key: str, dimension: int) -> list[float]:
-    response = httpx.post(
-        "https://api.openai.com/v1/embeddings",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        },
-        json={"model": model, "input": text},
-        timeout=60.0
-    )
-    response.raise_for_status()
-    payload: dict[str, Any] = response.json()
-    data = payload.get("data")
+    with openai_trace("fleet-health.generate-embedding"):
+        response = OpenAI(api_key=api_key).embeddings.create(model=model, input=text)
+    data = getattr(response, "data", None)
     if not isinstance(data, list) or not data:
         raise RuntimeError("OpenAI embeddings response missing data[]")
-    vec = data[0].get("embedding")
+    vec = getattr(data[0], "embedding", None)
     if not isinstance(vec, list):
         raise RuntimeError("OpenAI embeddings response missing embedding vector")
     out = [float(x) for x in vec]
@@ -110,7 +109,9 @@ def create_query_embedder(
     """Factory for ``embed(query_text) -> vector`` used by S3 Vectors search and indexing."""
     raw = provider if provider is not None else os.getenv("FLEET_EMBEDDING_PROVIDER")
     name = (raw or "hash").strip().lower()
-    key = openai_api_key if openai_api_key is not None else os.getenv("FLEET_OPENAI_API_KEY", "")
+    key = openai_api_key if openai_api_key is not None else (
+        os.getenv("OPENAI_API_KEY") or os.getenv("FLEET_OPENAI_API_KEY", "")
+    )
     oa_model = (
         openai_model
         if openai_model is not None
@@ -128,7 +129,7 @@ def create_query_embedder(
 
     if name == "openai":
         if not key.strip():
-            raise ValueError("FLEET_EMBEDDING_PROVIDER=openai requires FLEET_OPENAI_API_KEY.")
+            raise ValueError("FLEET_EMBEDDING_PROVIDER=openai requires OPENAI_API_KEY.")
         return lambda q: _openai_embedding(q, model=oa_model, api_key=key.strip(), dimension=dimension)
 
     if name in ("http", "http_json"):

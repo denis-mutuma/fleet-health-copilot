@@ -69,6 +69,7 @@ locals {
   # Must not depend on secret ARNs (unknown until apply) or count on ecs_task_secret_access breaks at plan.
   ecs_secret_enabled = var.enable_ecs && (
     (var.enable_managed_secrets && length(setintersection(var.managed_secret_names, local.managed_web_secret_names)) > 0) ||
+    (var.enable_managed_secrets && length(setintersection(var.managed_secret_names, local.managed_orchestrator_secret_names)) > 0) ||
     var.enable_postgres ||
     length(var.web_secret_arns) > 0 ||
     length(var.orchestrator_secret_arns) > 0

@@ -3,14 +3,22 @@ locals {
   managed_secret_arns = {
     for name, secret in aws_secretsmanager_secret.managed : name => secret.arn
   }
-  managed_web_secret_names = toset(["CLERK_SECRET_KEY"])
+  managed_web_secret_names          = toset(["CLERK_SECRET_KEY"])
+  managed_orchestrator_secret_names = toset(["OPENAI_API_KEY"])
   managed_web_secret_arns = {
     for name, arn in local.managed_secret_arns : name => arn
     if contains(local.managed_web_secret_names, name)
   }
-  managed_orchestrator_secret_arns = var.enable_postgres ? {
-    FLEET_DATABASE_URL = aws_secretsmanager_secret.postgres_database_url[0].arn
-  } : {}
+  managed_orchestrator_runtime_secret_arns = {
+    for name, arn in local.managed_secret_arns : name => arn
+    if contains(local.managed_orchestrator_secret_names, name)
+  }
+  managed_orchestrator_secret_arns = merge(
+    local.managed_orchestrator_runtime_secret_arns,
+    var.enable_postgres ? {
+      FLEET_DATABASE_URL = aws_secretsmanager_secret.postgres_database_url[0].arn
+    } : {}
+  )
 }
 
 resource "aws_secretsmanager_secret" "managed" {

@@ -2,6 +2,7 @@ import importlib
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -65,6 +66,29 @@ def test_retrieval_backend_factory_defaults_to_lexical() -> None:
     backend = build_retrieval_backend()
 
     assert isinstance(backend, LexicalRetrievalBackend)
+
+
+def test_create_query_embedder_uses_openai_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeClient:
+        def __init__(self, api_key: str) -> None:
+            self.api_key = api_key
+            self.embeddings = SimpleNamespace(create=self._create)
+
+        def _create(self, *, model: str, input: str) -> object:
+            assert model == "text-embedding-3-small"
+            assert input == "battery thermal drift"
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3, 0.4])])
+
+    monkeypatch.setattr("fleet_health_orchestrator.embeddings.OpenAI", FakeClient)
+
+    embed = create_query_embedder(
+        4,
+        provider="openai",
+        openai_api_key="sk-test",
+        openai_model="text-embedding-3-small",
+    )
+
+    assert embed("battery thermal drift") == [0.1, 0.2, 0.3, 0.4]
 
 
 def test_retrieval_backend_factory_builds_s3vectors_with_bucket_and_index() -> None:
@@ -661,17 +685,19 @@ def test_hash_embedding_produces_expected_dimension() -> None:
 
 def test_openai_embedding_provider_calls_api(monkeypatch: pytest.MonkeyPatch) -> None:
     from fleet_health_orchestrator import embeddings as embeddings_mod
+    from types import SimpleNamespace
 
-    class FakeResponse:
-        status_code = 200
+    class FakeClient:
+        def __init__(self, api_key: str) -> None:
+            assert api_key == "sk-test"
+            self.embeddings = SimpleNamespace(create=self._create)
 
-        def raise_for_status(self) -> None:
-            return None
+        def _create(self, *, model: str, input: str) -> object:
+            assert model == "text-embedding-3-small"
+            assert input == "hello"
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.25, 0.75])])
 
-        def json(self) -> dict[str, object]:
-            return {"data": [{"embedding": [0.25, 0.75]}]}
-
-    monkeypatch.setattr(embeddings_mod.httpx, "post", lambda *a, **k: FakeResponse())
+    monkeypatch.setattr(embeddings_mod, "OpenAI", FakeClient)
     embed = embeddings_mod.create_query_embedder(
         2,
         provider="openai",

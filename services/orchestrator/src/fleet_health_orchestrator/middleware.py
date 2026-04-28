@@ -128,6 +128,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception as exc:
             elapsed_ms = (time.time() - start_time) * 1000
+            dependencies = getattr(request.app.state, "dependencies", None)
+            if dependencies is not None:
+                dependencies.metrics.observe_request(elapsed_ms)
             log_with_context(
                 _log,
                 logging.ERROR,
@@ -140,6 +143,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             raise
 
         elapsed_ms = (time.time() - start_time) * 1000
+        dependencies = getattr(request.app.state, "dependencies", None)
+        if dependencies is not None:
+            dependencies.metrics.observe_request(elapsed_ms)
 
         # Log response
         log_with_context(

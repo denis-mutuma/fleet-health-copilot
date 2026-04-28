@@ -757,6 +757,34 @@ def test_metrics_endpoint(tmp_path, monkeypatch) -> None:
     assert "events_ingested_total" in response.json()
 
 
+def test_metrics_endpoint_includes_request_counter_after_request(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+
+    health = client.get("/health")
+    assert health.status_code == 200
+
+    response = client.get("/v1/metrics")
+
+    assert response.status_code == 200
+    assert response.json()["requests_total"] >= 1.0
+
+
+def test_prometheus_metrics_endpoint_renders_histograms(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+
+    warmup = client.get("/health")
+    assert warmup.status_code == 200
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert "requests_total" in body
+    assert "request_latency_ms_bucket" in body
+    assert "orchestration_latency_ms_bucket" in body
+
+
 def test_chat_session_lifecycle_and_rag_citations(tmp_path, monkeypatch) -> None:
     client = _build_client(tmp_path, monkeypatch)
     client.post(

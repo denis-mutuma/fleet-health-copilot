@@ -6,7 +6,7 @@ import re
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Header, Path, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Header, Path, Query, Response, UploadFile
 
 from fleet_health_orchestrator.auth_context import RequestIdentity
 from fleet_health_orchestrator.dependencies import AppDependencies, get_dependencies
@@ -120,7 +120,7 @@ def _create_incident_from_event(event: TelemetryEvent, dependencies: AppDependen
     dependencies.repository.insert_incident(incident)
     latency_ms = (perf_counter() - started_at) * 1000
     dependencies.metrics["incidents_generated_total"] += 1
-    dependencies.metrics["orchestration_latency_ms_last"] = latency_ms
+    dependencies.metrics.observe_orchestration(latency_ms)
 
     dependencies.logger.info(
         "Incident generated: %s (device=%s, confidence=%.2f, latency=%.1f ms)",
@@ -148,7 +148,7 @@ def _create_incident_from_event_for_tenant(
     dependencies.repository.insert_incident(incident, tenant_id=tenant_id)
     latency_ms = (perf_counter() - started_at) * 1000
     dependencies.metrics["incidents_generated_total"] += 1
-    dependencies.metrics["orchestration_latency_ms_last"] = latency_ms
+    dependencies.metrics.observe_orchestration(latency_ms)
 
     dependencies.logger.info(
         "Incident generated: %s (device=%s, tenant=%s, confidence=%.2f, latency=%.1f ms)",
@@ -1365,8 +1365,7 @@ def rag_search(
     hits = dependencies.retrieval_backend.search(query=query, documents=documents, limit=limit)
     latency_ms = (perf_counter() - started_at) * 1000
 
-    dependencies.metrics["rag_queries_total"] += 1
-    dependencies.metrics["rag_query_latency_ms_last"] = latency_ms
+    dependencies.metrics.observe_rag_query(latency_ms)
 
     dependencies.logger.debug("RAG search: query=%r, hits=%d, latency=%.1f ms", query, len(hits), latency_ms)
     return hits
@@ -1422,6 +1421,19 @@ def orchestrate_event(
 )
 def get_metrics(dependencies: AppDependencies = Depends(get_dependencies)) -> dict[str, float]:
     return dependencies.metrics.copy()
+
+
+@router.get(
+    "/metrics",
+    tags=["Metrics"],
+    summary="Get Prometheus metrics",
+    response_description="Prometheus exposition text for counters, gauges, and histograms.",
+)
+def get_prometheus_metrics(dependencies: AppDependencies = Depends(get_dependencies)) -> Response:
+    return Response(
+        content=dependencies.metrics.render_prometheus(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @router.get(
@@ -1572,14 +1584,17 @@ def post_chat_message(
     if should_use_llm_chat:
         try:
             history = dependencies.repository.list_chat_messages(clean_session_id)
+            llm_turn_started_at = perf_counter()
             turn_result = dependencies.chat_orchestrator.run_turn(
                 user_content=message.content,
                 session=session,
                 chat_history=history,
             )
+            llm_turn_latency_ms = (perf_counter() - llm_turn_started_at) * 1000
         except Exception as exc:
             dependencies.logger.warning("LLM chat turn failed, using deterministic fallback: %s", exc)
             turn_result = None
+            llm_turn_latency_ms = None
 
         if turn_result is not None:
             assistant_text = turn_result.content
@@ -1590,6 +1605,10 @@ def post_chat_message(
             tool_calls = turn_result.tool_calls
             trace_spans = turn_result.trace_spans
             llm_cost_usd = turn_result.llm_cost_usd
+            dependencies.metrics.observe_llm_chat_turn(
+                latency_ms=llm_turn_latency_ms,
+                cost_usd=llm_cost_usd,
+            )
         else:
             assistant_text, citations, action, action_status, action_payload = _handle_chat_action(
                 content=message.content,

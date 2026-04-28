@@ -20,6 +20,7 @@ from fleet_health_orchestrator.exceptions import AuthorizationError, DependencyI
 from fleet_health_orchestrator.chat_orchestrator import ChatToolOrchestrator
 from fleet_health_orchestrator.logging_config import setup_logging
 from fleet_health_orchestrator.mcp_client_adapter import MCPClientAdapter
+from fleet_health_orchestrator.metrics import RuntimeMetrics
 from fleet_health_orchestrator.rag import RetrievalBackend, build_retrieval_backend
 from fleet_health_orchestrator.repository import FleetRepository
 
@@ -33,7 +34,7 @@ class AppDependencies:
     orchestrator: AgentOrchestrator
     mcp_adapter: MCPClientAdapter | None
     chat_orchestrator: ChatToolOrchestrator | None
-    metrics: dict[str, float]
+    metrics: RuntimeMetrics
 
 
 def initialize_dependencies() -> AppDependencies:
@@ -131,13 +132,7 @@ def initialize_dependencies() -> AppDependencies:
     except Exception as exc:
         logger.warning("Chat tool orchestrator initialization failed; deterministic fallback remains active: %s", exc)
 
-    metrics = {
-        "events_ingested_total": 0.0,
-        "incidents_generated_total": 0.0,
-        "rag_queries_total": 0.0,
-        "rag_query_latency_ms_last": 0.0,
-        "orchestration_latency_ms_last": 0.0,
-    }
+    metrics = RuntimeMetrics()
 
     return AppDependencies(
         settings=settings,

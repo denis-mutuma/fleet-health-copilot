@@ -6,13 +6,20 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator
+from uuid import uuid4
 
-from fleet_health_orchestrator.models import IncidentReport, TelemetryEvent
+from fleet_health_orchestrator.models import AuditEvent, IncidentReport, IncidentStatusHistoryEntry, TelemetryEvent
 
 
 def _utc_now_iso() -> str:
     """Return a timezone-aware UTC timestamp in ISO-8601 format."""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _coerce_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
 
 
 class FleetRepository:
@@ -254,7 +261,78 @@ class FleetRepository:
                 "CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created_at ON chat_messages(session_id, created_at)"
             )
 
-    def _incident_from_row(self, row: sqlite3.Row) -> IncidentReport:
+            connection.execute(
+                self._sql(
+                    """
+                    CREATE TABLE IF NOT EXISTS incident_status_history (
+                        history_id TEXT PRIMARY KEY,
+                        incident_id TEXT NOT NULL,
+                        previous_status TEXT,
+                        status TEXT NOT NULL,
+                        changed_at TEXT NOT NULL,
+                        actor TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        reason TEXT,
+                        FOREIGN KEY(incident_id) REFERENCES incidents(incident_id)
+                    )
+                    """,
+                    """
+                    CREATE TABLE IF NOT EXISTS incident_status_history (
+                        history_id TEXT PRIMARY KEY,
+                        incident_id TEXT NOT NULL REFERENCES incidents(incident_id),
+                        previous_status TEXT,
+                        status TEXT NOT NULL,
+                        changed_at TEXT NOT NULL,
+                        actor TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        reason TEXT
+                    )
+                    """,
+                )
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_incident_status_history_incident_changed_at ON incident_status_history(incident_id, changed_at)"
+            )
+
+            connection.execute(
+                self._sql(
+                    """
+                    CREATE TABLE IF NOT EXISTS audit_events (
+                        event_id TEXT PRIMARY KEY,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        actor TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        details_json TEXT NOT NULL DEFAULT '{}',
+                        occurred_at TEXT NOT NULL
+                    )
+                    """,
+                    """
+                    CREATE TABLE IF NOT EXISTS audit_events (
+                        event_id TEXT PRIMARY KEY,
+                        entity_type TEXT NOT NULL,
+                        entity_id TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        actor TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        details_json TEXT NOT NULL DEFAULT '{}',
+                        occurred_at TEXT NOT NULL
+                    )
+                    """,
+                )
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_events_entity_occurred_at ON audit_events(entity_type, entity_id, occurred_at)"
+            )
+
+    def _incident_from_row(
+        self,
+        row: sqlite3.Row,
+        *,
+        status_history: list[IncidentStatusHistoryEntry] | None = None,
+        audit_events: list[AuditEvent] | None = None,
+    ) -> IncidentReport:
         return IncidentReport(
             incident_id=row["incident_id"],
             device_id=row["device_id"],
@@ -266,8 +344,193 @@ class FleetRepository:
             confidence_score=row["confidence_score"],
             agent_trace=json.loads(row["agent_trace_json"]),
             verification=json.loads(row["verification_json"]),
-            latency_ms=row["latency_ms"]
+            latency_ms=row["latency_ms"],
+            status_history=status_history or [],
+            audit_events=audit_events or [],
         )
+
+    def _status_history_from_rows(self, rows: list[sqlite3.Row]) -> list[IncidentStatusHistoryEntry]:
+        return [
+            IncidentStatusHistoryEntry(
+                history_id=row["history_id"],
+                incident_id=row["incident_id"],
+                previous_status=row["previous_status"],
+                status=row["status"],
+                changed_at=_coerce_datetime(row["changed_at"]),
+                actor=row["actor"],
+                source=row["source"],
+                reason=row["reason"],
+            )
+            for row in rows
+        ]
+
+    def _audit_events_from_rows(self, rows: list[sqlite3.Row]) -> list[AuditEvent]:
+        return [
+            AuditEvent(
+                event_id=row["event_id"],
+                entity_type=row["entity_type"],
+                entity_id=row["entity_id"],
+                action=row["action"],
+                actor=row["actor"],
+                source=row["source"],
+                occurred_at=_coerce_datetime(row["occurred_at"]),
+                details=json.loads(row["details_json"]),
+            )
+            for row in rows
+        ]
+
+    def _list_incident_status_history(self, connection: Any, incident_id: str) -> list[IncidentStatusHistoryEntry]:
+        rows = connection.execute(
+            self._sql(
+                """
+                SELECT history_id, incident_id, previous_status, status, changed_at, actor, source, reason
+                FROM incident_status_history
+                WHERE incident_id = ?
+                ORDER BY changed_at DESC, history_id DESC
+                """,
+                """
+                SELECT history_id, incident_id, previous_status, status, changed_at, actor, source, reason
+                FROM incident_status_history
+                WHERE incident_id = %s
+                ORDER BY changed_at DESC, history_id DESC
+                """,
+            ),
+            (incident_id,),
+        ).fetchall()
+        return self._status_history_from_rows(rows)
+
+    def _list_incident_audit_events(self, connection: Any, incident_id: str) -> list[AuditEvent]:
+        rows = connection.execute(
+            self._sql(
+                """
+                SELECT event_id, entity_type, entity_id, action, actor, source, details_json, occurred_at
+                FROM audit_events
+                WHERE entity_type = ? AND entity_id = ?
+                ORDER BY occurred_at DESC, event_id DESC
+                """,
+                """
+                SELECT event_id, entity_type, entity_id, action, actor, source, details_json, occurred_at
+                FROM audit_events
+                WHERE entity_type = %s AND entity_id = %s
+                ORDER BY occurred_at DESC, event_id DESC
+                """,
+            ),
+            ("incident", incident_id),
+        ).fetchall()
+        return self._audit_events_from_rows(rows)
+
+    def _record_incident_status_history(
+        self,
+        connection: Any,
+        *,
+        incident_id: str,
+        previous_status: str | None,
+        status: str,
+        actor: str,
+        source: str,
+        reason: str | None,
+    ) -> None:
+        connection.execute(
+            self._sql(
+                """
+                INSERT INTO incident_status_history
+                (history_id, incident_id, previous_status, status, changed_at, actor, source, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                """
+                INSERT INTO incident_status_history
+                (history_id, incident_id, previous_status, status, changed_at, actor, source, reason)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+            ),
+            (
+                f"hist_{uuid4().hex}",
+                incident_id,
+                previous_status,
+                status,
+                _utc_now_iso(),
+                actor,
+                source,
+                reason,
+            ),
+        )
+
+    def _record_audit_event(
+        self,
+        connection: Any,
+        *,
+        entity_type: str,
+        entity_id: str,
+        action: str,
+        actor: str,
+        source: str,
+        details: dict[str, object],
+    ) -> None:
+        connection.execute(
+            self._sql(
+                """
+                INSERT INTO audit_events
+                (event_id, entity_type, entity_id, action, actor, source, details_json, occurred_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                """
+                INSERT INTO audit_events
+                (event_id, entity_type, entity_id, action, actor, source, details_json, occurred_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+            ),
+            (
+                f"audit_{uuid4().hex}",
+                entity_type,
+                entity_id,
+                action,
+                actor,
+                source,
+                json.dumps(details),
+                _utc_now_iso(),
+            ),
+        )
+
+    def _ensure_incident_lifecycle_records(self, connection: Any, incident: IncidentReport) -> None:
+        history_exists = connection.execute(
+            self._sql(
+                "SELECT 1 FROM incident_status_history WHERE incident_id = ? LIMIT 1",
+                "SELECT 1 FROM incident_status_history WHERE incident_id = %s LIMIT 1",
+            ),
+            (incident.incident_id,),
+        ).fetchone()
+        if history_exists is None:
+            self._record_incident_status_history(
+                connection,
+                incident_id=incident.incident_id,
+                previous_status=None,
+                status=incident.status,
+                actor="system:orchestrator",
+                source="orchestrator.event",
+                reason="Incident created from telemetry orchestration.",
+            )
+
+        audit_exists = connection.execute(
+            self._sql(
+                "SELECT 1 FROM audit_events WHERE entity_type = ? AND entity_id = ? AND action = ? LIMIT 1",
+                "SELECT 1 FROM audit_events WHERE entity_type = %s AND entity_id = %s AND action = %s LIMIT 1",
+            ),
+            ("incident", incident.incident_id, "incident.created"),
+        ).fetchone()
+        if audit_exists is None:
+            self._record_audit_event(
+                connection,
+                entity_type="incident",
+                entity_id=incident.incident_id,
+                action="incident.created",
+                actor="system:orchestrator",
+                source="orchestrator.event",
+                details={
+                    "status": incident.status,
+                    "device_id": incident.device_id,
+                    "summary": incident.summary,
+                },
+            )
 
     def insert_event(self, event: TelemetryEvent) -> None:
         with self._connect() as connection:
@@ -395,6 +658,7 @@ class FleetRepository:
                     incident.latency_ms
                 )
             )
+            self._ensure_incident_lifecycle_records(connection, incident)
 
     def list_incidents(self) -> list[IncidentReport]:
         with self._connect() as connection:
@@ -426,17 +690,42 @@ class FleetRepository:
                 (incident_id,)
             ).fetchone()
 
-        if row is None:
-            return None
+            if row is None:
+                return None
 
-        return self._incident_from_row(row)
+            status_history = self._list_incident_status_history(connection, incident_id)
+            audit_events = self._list_incident_audit_events(connection, incident_id)
+
+        return self._incident_from_row(
+            row,
+            status_history=status_history,
+            audit_events=audit_events,
+        )
 
     def update_incident_status(
         self,
         incident_id: str,
-        status: str
+        status: str,
+        *,
+        actor: str = "system:api",
+        reason: str | None = None,
+        source: str = "api.incidents",
     ) -> IncidentReport | None:
         with self._connect() as connection:
+            existing = connection.execute(
+                self._sql(
+                    "SELECT status FROM incidents WHERE incident_id = ?",
+                    "SELECT status FROM incidents WHERE incident_id = %s",
+                ),
+                (incident_id,),
+            ).fetchone()
+            if existing is None:
+                return None
+
+            previous_status = str(existing["status"])
+            if previous_status == status:
+                return self.get_incident(incident_id)
+
             cursor = connection.execute(
                 self._sql(
                     """
@@ -453,6 +742,30 @@ class FleetRepository:
                 (status, incident_id)
             )
             row_count = cursor.rowcount
+
+            if row_count > 0:
+                self._record_incident_status_history(
+                    connection,
+                    incident_id=incident_id,
+                    previous_status=previous_status,
+                    status=status,
+                    actor=actor,
+                    source=source,
+                    reason=reason,
+                )
+                self._record_audit_event(
+                    connection,
+                    entity_type="incident",
+                    entity_id=incident_id,
+                    action="incident.status_updated",
+                    actor=actor,
+                    source=source,
+                    details={
+                        "from_status": previous_status,
+                        "to_status": status,
+                        **({"reason": reason} if reason else {}),
+                    },
+                )
 
         if row_count == 0:
             return None

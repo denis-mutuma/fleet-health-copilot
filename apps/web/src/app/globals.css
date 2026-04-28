@@ -524,6 +524,24 @@ select:focus-visible {
   margin: 18px 0;
 }
 
+.incident-note-field {
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+}
+
+.incident-note-field textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.88);
+  color: var(--text);
+  line-height: 1.5;
+  resize: vertical;
+}
+
 .actions-panel .actions {
   margin: 0;
   justify-content: flex-start;
@@ -602,6 +620,45 @@ select:focus-visible {
   gap: 14px;
   margin: 0;
   padding-left: 20px;
+}
+
+.status-history-list,
+.audit-log-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-history-item,
+.audit-log-item {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgb(255 255 255 / 0.72);
+}
+
+.status-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.status-history-copy,
+.status-history-reason {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.status-history-reason {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
 }
 
 .warning-box {

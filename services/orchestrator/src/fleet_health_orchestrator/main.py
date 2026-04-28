@@ -7,6 +7,7 @@ from fleet_health_orchestrator.dependencies import initialize_dependencies
 from fleet_health_orchestrator.endpoints import router
 from fleet_health_orchestrator.exceptions import OrchestratorError
 from fleet_health_orchestrator.middleware import (
+    AuthContextMiddleware,
     CorrelationIDMiddleware,
     DebugLoggingMiddleware,
     RequestLoggingMiddleware,
@@ -43,9 +44,12 @@ def create_app() -> FastAPI:
         enabled=dependencies.settings.log_level.upper() == "DEBUG",
     )
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(AuthContextMiddleware, settings=dependencies.settings)
     app.add_middleware(CorrelationIDMiddleware)
 
-    dependencies.logger.info("Middleware registered: CorrelationID, RequestLogging, DebugLogging")
+    dependencies.logger.info(
+        "Middleware registered: CorrelationID, AuthContext, RequestLogging, DebugLogging"
+    )
 
     @app.exception_handler(OrchestratorError)
     async def orchestrator_error_handler(_: Request, exc: OrchestratorError) -> JSONResponse:

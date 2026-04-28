@@ -4,6 +4,36 @@ export { OrchestratorRequestError };
 
 export type IncidentStatus = "open" | "acknowledged" | "resolved";
 
+export type RequestIdentityHeaders = {
+  actorId?: string;
+  tenantId?: string;
+  fleetId?: string;
+  roles?: string[];
+  authProvider?: string;
+};
+
+export type IncidentStatusHistoryEntry = {
+  history_id: string;
+  incident_id: string;
+  previous_status: IncidentStatus | null;
+  status: IncidentStatus;
+  changed_at: string;
+  actor: string;
+  source: string;
+  reason: string | null;
+};
+
+export type IncidentAuditEvent = {
+  event_id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  actor: string;
+  source: string;
+  occurred_at: string;
+  details: Record<string, unknown>;
+};
+
 export type IncidentReport = {
   incident_id: string;
   device_id: string;
@@ -20,6 +50,8 @@ export type IncidentReport = {
     warnings?: string[];
   };
   latency_ms: number;
+  status_history: IncidentStatusHistoryEntry[];
+  audit_events: IncidentAuditEvent[];
 };
 
 type TelemetryEvent = {
@@ -55,13 +87,23 @@ export async function getIncident(
 
 export async function updateIncidentStatus(
   incidentId: string,
-  status: IncidentStatus
+  status: IncidentStatus,
+  reason?: string,
+  identity?: RequestIdentityHeaders
 ): Promise<IncidentReport> {
+  const headers = new Headers();
+  if (identity?.actorId) headers.set("x-actor-id", identity.actorId);
+  if (identity?.tenantId) headers.set("x-tenant-id", identity.tenantId);
+  if (identity?.fleetId) headers.set("x-fleet-id", identity.fleetId);
+  if (identity?.authProvider) headers.set("x-auth-provider", identity.authProvider);
+  if (identity?.roles?.length) headers.set("x-roles", identity.roles.join(","));
+
   return orchestratorRequest<IncidentReport>(
     `/v1/incidents/${encodeURIComponent(incidentId)}`,
     {
       method: "PATCH",
-      body: JSON.stringify({ status })
+      headers,
+      body: JSON.stringify({ status, ...(reason ? { reason } : {}) })
     }
   );
 }
@@ -80,9 +122,19 @@ function buildCanonicalEvent(): TelemetryEvent {
   };
 }
 
-export async function orchestrateCanonicalEvent(): Promise<IncidentReport> {
+export async function orchestrateCanonicalEvent(
+  identity?: RequestIdentityHeaders
+): Promise<IncidentReport> {
+  const headers = new Headers();
+  if (identity?.actorId) headers.set("x-actor-id", identity.actorId);
+  if (identity?.tenantId) headers.set("x-tenant-id", identity.tenantId);
+  if (identity?.fleetId) headers.set("x-fleet-id", identity.fleetId);
+  if (identity?.authProvider) headers.set("x-auth-provider", identity.authProvider);
+  if (identity?.roles?.length) headers.set("x-roles", identity.roles.join(","));
+
   return orchestratorRequest<IncidentReport>("/v1/orchestrate/event", {
     method: "POST",
+    headers,
     body: JSON.stringify(buildCanonicalEvent())
   });
 }

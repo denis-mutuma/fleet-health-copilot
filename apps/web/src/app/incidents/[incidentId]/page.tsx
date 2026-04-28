@@ -8,6 +8,18 @@ function statusLabel(status: IncidentReport["status"]): string {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function formatTimestamp(value: string): string {
+  return new Date(value).toLocaleString();
+}
+
+function auditDetailSummary(details: Record<string, unknown>): string[] {
+  return Object.entries(details).map(([key, value]) => {
+    const normalizedKey = key.replaceAll("_", " ");
+    const normalizedValue = Array.isArray(value) ? value.join(", ") : String(value);
+    return `${normalizedKey}: ${normalizedValue}`;
+  });
+}
+
 export default async function IncidentDetailPage({
   params
 }: {
@@ -102,6 +114,39 @@ export default async function IncidentDetailPage({
         <section className="card">
           <div className="section-heading">
             <div>
+              <p className="eyebrow">Lifecycle</p>
+              <h2>Status history</h2>
+            </div>
+          </div>
+          {incident.status_history.length === 0 ? (
+            <p className="muted">No lifecycle entries have been recorded yet.</p>
+          ) : (
+            <ol className="timeline-list status-history-list">
+              {incident.status_history.map((entry) => (
+                <li key={entry.history_id} className="status-history-item">
+                  <div className="status-history-header">
+                    <span className={`status-badge status-${entry.status}`}>
+                      {statusLabel(entry.status)}
+                    </span>
+                    <span className="muted">{formatTimestamp(entry.changed_at)}</span>
+                  </div>
+                  <p className="status-history-copy">
+                    {entry.previous_status ? `${statusLabel(entry.previous_status)} -> ` : "Created as "}
+                    {statusLabel(entry.status)} by <strong>{entry.actor}</strong>
+                  </p>
+                  <p className="muted">Source: {entry.source}</p>
+                  {entry.reason ? <p className="status-history-reason">{entry.reason}</p> : null}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      </section>
+
+      <section className="panel-grid">
+        <section className="card">
+          <div className="section-heading">
+            <div>
               <p className="eyebrow">Verification</p>
               <h2>Checks and warnings</h2>
             </div>
@@ -121,6 +166,39 @@ export default async function IncidentDetailPage({
               </ul>
             </div>
           ) : null}
+        </section>
+
+        <section className="card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Governance</p>
+              <h2>Audit trail</h2>
+            </div>
+          </div>
+          {incident.audit_events.length === 0 ? (
+            <p className="muted">No audit events have been recorded yet.</p>
+          ) : (
+            <ul className="audit-log-list">
+              {incident.audit_events.map((event) => (
+                <li key={event.event_id} className="audit-log-item">
+                  <div className="status-history-header">
+                    <strong>{event.action.replaceAll(".", " ")}</strong>
+                    <span className="muted">{formatTimestamp(event.occurred_at)}</span>
+                  </div>
+                  <p className="status-history-copy">
+                    <strong>{event.actor}</strong> via {event.source}
+                  </p>
+                  {auditDetailSummary(event.details).length > 0 ? (
+                    <ul>
+                      {auditDetailSummary(event.details).map((detail) => (
+                        <li key={`${event.event_id}-${detail}`}>{detail}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </section>
 

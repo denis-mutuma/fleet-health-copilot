@@ -1,120 +1,207 @@
 # Architecture
 
-Fleet Health Copilot is a software-only incident operations platform for robotics and IoT fleets. It includes telemetry ingestion, multi-agent orchestration, retrieval-augmented context, MCP tool access, and operator-facing incident reports.
+This document describes the production target architecture for Fleet Health Copilot.
 
-## System View
+It intentionally replaces demo-first assumptions and defines a platform shape that can be operated, secured, and scaled in real environments.
+
+## Goals
+
+- Multi-tenant fleet operations workspace with strict tenant boundaries.
+- Authenticated and authorized workflows for incident actions, chat actions, and knowledge operations.
+- Evidence-grounded orchestration with explicit provenance and auditability.
+- Cost-governed LLM usage with enforceable policy controls.
+- Operational reliability with observability, readiness checks, and deployment safeguards.
+
+## System Overview
 
 ```mermaid
 flowchart LR
-  operator["Operator"] --> edge["CloudFront + WAF"]
-  edge --> webAlb["Public Web ALB"]
-  webAlb --> webApp["Next.js Dashboard"]
-  webApp --> webApi["Next.js API Routes"]
-  webApi --> apiGateway["HTTP API Gateway"]
-  apiGateway --> internalAlb["Internal Orchestrator ALB"]
-  internalAlb --> orchestrator["FastAPI Orchestrator"]
-  orchestrator --> store["SQLite (local) or PostgreSQL (prod)"]
-  orchestrator --> ragBackend["Retrieval Backend"]
-  mcpTools["MCP Tool Servers"] --> orchestrator
-  seedData["Seed Events And Runbooks"] --> orchestrator
+  Operator[Operator] --> Edge[CloudFront + WAF]
+  Edge --> Web[Next.js Web App]
+  Web --> BFF[Next.js BFF Routes]
+  BFF --> APIGW[API Gateway]
+  APIGW --> Orchestrator[FastAPI Orchestrator]
+
+  Orchestrator --> DB[(PostgreSQL)]
+  Orchestrator --> RAG[Retrieval Backend\nLexical or S3 Vectors]
+  Orchestrator --> MCP[MCP Tool Surface]
+  Orchestrator --> Obs[Logs + Metrics + Trace Spans]
+
+  Admin[Platform Admin] --> IAM[IAM + Secrets Manager]
+  IAM --> Orchestrator
+  IAM --> Web
 ```
 
-Primary components:
+## Trust Boundaries
 
-- `apps/web`: Clerk-protected Next.js dashboard for incident list/detail views and simulation.
-- `services/orchestrator`: FastAPI service for telemetry ingestion, RAG search, incident orchestration, persistence, and metrics.
-- `services/mcp-*`: MCP tool servers for telemetry, retrieval, and incident actions.
-- `services/orchestrator/data`: JSONL seed data for sample events and detailed runbooks.
-- `packages/contracts`: JSON Schemas for event and incident report shapes.
+1. Edge boundary
+- CloudFront + WAF is the public ingress boundary.
+- DDoS, malicious input filtering, and rate shaping belong here first.
 
-## Runtime Flow
+2. Web and BFF boundary
+- Browser never directly calls privileged orchestration internals.
+- Next.js BFF routes normalize auth context, tenant context, and response contracts.
+
+3. Service boundary
+- FastAPI orchestrator is the authoritative domain API for incidents, RAG, and chat orchestration.
+- Service enforces request identity context and role-based mutation controls.
+
+4. Data boundary
+- Tenant-scoped domain records live in PostgreSQL for production.
+- Retrieval indexes and document chunks are versioned and auditable.
+
+## Identity and Authorization Model
+
+Request identity model (current implementation foundation in orchestrator):
+
+- Actor identity: supplied by trusted gateway/BFF header.
+- Tenant identity: supplied per request and used for scope enforcement.
+- Fleet identity: optional additional scope for fleet-level partitioning.
+- Roles: comma-separated role claims normalized by middleware.
+
+Policy model:
+
+- Read endpoints: allowed by default unless stricter policy is configured.
+- Mutation endpoints: require roles from configured mutation role list.
+- Auth-required mode: rejects unauthenticated requests globally.
+- Tenant-required mode: rejects authenticated requests with missing tenant scope.
+
+This policy is configuration-driven and is designed to integrate with enterprise SSO claims at the BFF or gateway layer.
+
+## Domain Architecture
+
+Core domain entities:
+
+- Tenant
+- Fleet
+- Actor
+- Incident
+- IncidentStatusHistory
+- AuditEvent
+- ChatSession
+- ChatMessage
+- RagDocument and RagIngestionJob
+
+Key invariants:
+
+- Mutations produce auditable side effects.
+- Incident status transitions append status history.
+- User-visible assistant outputs must include source provenance when retrieval hits exist.
+- Error responses preserve API-compatible detail fields and structured error metadata.
+
+## Runtime Flow (Incident Action)
 
 ```mermaid
 sequenceDiagram
-  participant Operator
-  participant Web as Next.js Web
-  participant API as Next.js API
-  participant Orchestrator as FastAPI Orchestrator
-  participant Agents as Agent Orchestrator
-  participant Retrieval as Retrieval Backend
-  participant Store as SQLite
+  participant U as Operator
+  participant W as Web/BFF
+  participant O as Orchestrator
+  participant D as PostgreSQL
+  participant R as Retrieval
 
-  Operator->>Web: Trigger incident simulation
-  Web->>API: POST /api/incidents
-  API->>Orchestrator: POST /v1/orchestrate/event
-  Orchestrator->>Store: Persist telemetry event
-  Orchestrator->>Agents: Execute agent pipeline
-  Note right of Agents: Monitor, Retriever, Diagnosis, Planner, Verifier, Reporter
-  Agents->>Retrieval: Search runbooks and incident history
-  Retrieval-->>Agents: Return ranked evidence
-  Agents-->>Orchestrator: Incident report
-  Orchestrator->>Store: Persist incident
-  Orchestrator-->>API: Incident report
-  API-->>Web: Incident report
-  Web-->>Operator: Dashboard and detail view
+  U->>W: Acknowledge incident
+  W->>O: PATCH /v1/incidents/{id} + identity headers
+  O->>O: Enforce mutation role policy
+  O->>D: Update incident status + append status history + audit event
+  O-->>W: Updated incident payload
+  W-->>U: Incident workspace refresh
+
+  U->>W: Ask chat question
+  W->>O: POST /v1/chat/sessions/{id}/messages
+  O->>R: Retrieve context
+  O->>D: Persist assistant response + traces + citations
+  O-->>W: Updated conversation
+  W-->>U: Grounded response with provenance
 ```
 
-## Agent Flow
+## Service Components
+
+Web application:
+
+- Route-based product areas: operations, incidents, chat, knowledge, admin.
+- BFF endpoints for request normalization, auth forwarding, and error mapping.
+
+Orchestrator:
+
+- Agent pipeline: Monitor, Retriever, Diagnosis, Planner, Verifier, Reporter.
+- Chat tool orchestrator with policy controls and execution traces.
+- Repository layer for incidents, chat, ingestion jobs, and audit/history records.
+- Middleware stack for correlation IDs, identity context, and request logging.
+
+MCP surface:
+
+- Retrieval, incident operations, and telemetry lookups.
+- Tool invocations are represented as explicit traceable operations.
+
+## Data and Persistence Strategy
+
+Current target posture:
+
+- PostgreSQL is production source of truth.
+- SQLite remains development/test convenience only.
+- Runtime schema drift must be eliminated over time in favor of versioned migrations.
+
+Required hardening path:
+
+- Introduce migration lifecycle controls.
+- Add tenant columns and role-sensitive indexes where needed.
+- Add retention and archive policies for audit/event history.
+
+## Reliability and Observability
+
+Required capabilities:
+
+- Correlation ID on all inbound and outbound service responses.
+- Structured logs including actor and tenant context where present.
+- Request latency, orchestration latency, and retrieval latency metrics.
+- Chat tool call and trace span persistence for post-incident review.
+- Readiness endpoints tied to storage and repository checks.
+
+## Security and Compliance Controls
+
+- Least-privilege IAM for runtime services and CI workflows.
+- Secret material in managed secret store with rotation policy.
+- Header trust restricted to BFF/API gateway origin paths.
+- Audit coverage for incident mutations, knowledge mutations, and policy-relevant operations.
+
+## Deployment Topology
 
 ```mermaid
-flowchart LR
-  event["Telemetry Event"] --> monitor["Monitor Agent"]
-  monitor -->|"value > threshold"| retriever["Retriever Agent"]
-  monitor -->|"value <= threshold"| reject["Reject Non-Anomaly"]
-  retriever --> context["Runbooks And Incident History"]
-  context --> diagnosis["Diagnosis Agent"]
-  diagnosis --> planner["Planner Agent"]
-  planner --> verifier["Verifier Agent"]
-  verifier --> reporter["Reporter Agent"]
-  reporter --> report["Evidence-Grounded Incident Report"]
+flowchart TD
+  GH[GitHub Actions] --> TF[Terraform Apply]
+  TF --> ECS[ECS Services]
+  TF --> RDS[RDS PostgreSQL]
+  TF --> EDGE[CloudFront + WAF + API Gateway]
+
+  ECS --> WEB[Web Task]
+  ECS --> ORCH[Orchestrator Task]
+  ORCH --> RDS
+  ORCH --> VEC[S3 Vectors Optional]
 ```
 
-Current agents are intentionally simple and deterministic:
+## Incremental Rollout Plan
 
-- `MonitorAgent` flags events whose metric value exceeds the threshold.
-- `RetrieverAgent` builds a query from metric, tags, and severity.
-- `DiagnosisAgent` derives root-cause hypotheses from telemetry and retrieved history.
-- `PlannerAgent` converts runbook evidence into operator actions.
-- `VerifierAgent` checks that recommendations are grounded and conservative.
-- `ReporterAgent` produces a structured incident report with confidence, trace, verification, latency, and evidence.
+Phase 1 foundations:
 
-## Retrieval
+- Request identity middleware and role-aware mutation gate in orchestrator.
+- Tenant-scope enforcement toggle.
+- BFF-only upstream communication pattern.
 
-Retrieval is behind a small backend interface:
+Phase 2 productization:
 
-- `LexicalRetrievalBackend` is the local default and ranks documents by token overlap.
-- `S3VectorsRetrievalBackend` is opt-in and calls AWS S3 Vectors `query_vectors` (boto3 `s3vectors` client), mapping vector metadata plus the SQLite-backed document list into `RetrievalHit` rows. Query embeddings are pluggable (`FLEET_EMBEDDING_PROVIDER`: hash, OpenAI, HTTP, or optional sentence-transformers); `scripts/index_s3_vectors.py` upserts SQLite RAG rows into an index with the same embedder. See [s3-vectors-operations.md](s3-vectors-operations.md) for IAM and rollout order.
-- `FLEET_RETRIEVAL_BACKEND=lexical` keeps local development dependency-light; set `FLEET_RETRIEVAL_BACKEND=s3vectors` with bucket/index or index ARN when running against AWS.
+- Rebuild incident workspace and chat workflow around operator actions.
+- Surface status history, audit events, and usage governance.
 
-RAG ingestion API surface:
+Phase 3 hardening:
 
-- `POST /v1/rag/documents` ingests text payloads and stores chunked rows.
-- `POST /v1/rag/documents/upload` ingests uploaded files (`txt`, `md`, `json`, `html`, `pdf`, `docx`).
-- `POST /v1/rag/documents/upload/async` queues async ingestion jobs.
-- `GET /v1/rag/ingestion-jobs` and `GET /v1/rag/ingestion-jobs/{job_id}` expose ingestion job state.
+- Migration framework and data lifecycle controls.
+- SLOs, alerts, dashboards, and load-test gates in CI/CD.
 
-## MCP Tool Layer
+## Compatibility Constraints
 
-The MCP layer exposes orchestrator capabilities as tool servers:
+These interfaces must remain backward-compatible during transition:
 
-- `mcp-telemetry`: `query_device_events(device_id, limit)`, `lookup_device_health(device_id)`
-- `mcp-retrieval`: `search_operational_context(query, limit)`
-- `mcp-incidents`: `create_incident(event_payload)`, `search_incidents()`, `read_incident(incident_id)`, `update_incident(incident_id, status)`, `search_maintenance_history(device_id)`
-
-These tools keep the capstone modular and make the orchestrator accessible to agent hosts without coupling them to the web UI.
-
-## Deployment Shape
-
-Local deployment uses Docker Compose:
-
-- `web`: production-built Next.js app served with `next start`.
-- `orchestrator`: FastAPI API served by Uvicorn.
-
-AWS deploy automation runs through **[`.github/workflows/deploy-aws.yml`](../.github/workflows/deploy-aws.yml)** with Terraform in `infra/terraform` for the `prod` environment.
-
-Production edge/runtime details:
-
-- CloudFront fronts the public web ALB and is the preferred public entrypoint.
-- AWS WAF attaches to the CloudFront distribution.
-- API Gateway fronts the orchestrator through a VPC Link to an internal ALB.
-- Production persistence uses PostgreSQL; local development still defaults to SQLite.
+- Legacy FLEET_* environment variable aliases.
+- Error payload shape with both detail and structured error block.
+- Canonical runbook IDs in production seed corpus.
+- Existing MCP tool names and top-level contract behavior.

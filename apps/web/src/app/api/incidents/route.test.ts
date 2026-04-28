@@ -48,10 +48,35 @@ describe("incidents route", () => {
   it("returns 201 for canonical incident orchestration", async () => {
     incidentMocks.orchestrateCanonicalEvent.mockResolvedValueOnce({ incident_id: "inc_456", status: "open" });
 
-    const response = await POST();
+    const request = new Request("http://localhost/api/incidents", { method: "POST" });
+    const response = await POST(request as never);
     const payload = await response.json();
 
     expect(response.status).toBe(201);
     expect(payload.incident_id).toBe("inc_456");
+  });
+
+  it("forwards identity headers when present", async () => {
+    incidentMocks.orchestrateCanonicalEvent.mockResolvedValueOnce({ incident_id: "inc_789", status: "open" });
+
+    const request = new Request("http://localhost/api/incidents", {
+      method: "POST",
+      headers: {
+        "x-actor-id": "usr_1",
+        "x-tenant-id": "tenant_9",
+        "x-roles": "operator,admin",
+      },
+    });
+
+    const response = await POST(request as never);
+
+    expect(response.status).toBe(201);
+    expect(incidentMocks.orchestrateCanonicalEvent).toHaveBeenCalledWith({
+      actorId: "usr_1",
+      tenantId: "tenant_9",
+      fleetId: undefined,
+      authProvider: undefined,
+      roles: ["operator", "admin"],
+    });
   });
 });

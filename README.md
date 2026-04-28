@@ -181,6 +181,19 @@ Optional orchestrator HTTP settings:
 - `FLEET_CORS_ORIGINS` is a comma-separated list of allowed browser origins (for example `https://your-web-alb.example.com`). When unset, **no** CORS middleware is registered (fine for server-to-server or local Next.js API routes). When set, the orchestrator sends a tight `Access-Control-Allow-Origin` for those origins—use this when `NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL` exposes the orchestrator directly to the browser (common with ECS + ALB).
 - `GET /health` returns process up. `GET /ready` returns **200** only when the SQLite parent directory is writable, SQLite answers `SELECT 1`, and the repository can list RAG metadata—useful for load-balancer readiness checks.
 
+Production identity and authorization controls:
+
+- `FLEET_AUTH_REQUIRED=true` enforces authenticated request identity headers.
+- `FLEET_AUTH_ENFORCE_TENANT_SCOPE=true` also requires tenant scope on authenticated requests.
+- Header names are configurable for gateway/BFF integration:
+  - `FLEET_AUTH_ACTOR_HEADER` (default: `x-actor-id`)
+  - `FLEET_AUTH_TENANT_HEADER` (default: `x-tenant-id`)
+  - `FLEET_AUTH_FLEET_HEADER` (default: `x-fleet-id`)
+  - `FLEET_AUTH_ROLES_HEADER` (default: `x-roles`)
+- Mutation access policy is role-based:
+  - `FLEET_AUTH_MUTATION_ROLES` defines roles allowed for write operations (default: `operator,admin`).
+  - `FLEET_AUTH_DEFAULT_ROLES` applies when role headers are absent in non-strict modes (default: `operator`).
+
 Optional orchestrator retrieval settings:
 
 - `FLEET_RETRIEVAL_BACKEND=lexical` keeps the local default lexical token search.

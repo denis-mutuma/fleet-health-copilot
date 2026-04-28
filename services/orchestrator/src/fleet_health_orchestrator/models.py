@@ -46,6 +46,8 @@ class IncidentReport(BaseModel):
     agent_trace: list[str] = Field(default_factory=list)
     verification: dict[str, object] = Field(default_factory=dict)
     latency_ms: float = Field(default=0.0, ge=0.0)
+    status_history: list["IncidentStatusHistoryEntry"] = Field(default_factory=list)
+    audit_events: list["AuditEvent"] = Field(default_factory=list)
 
     @field_validator("incident_id", "device_id", "summary")
     @classmethod
@@ -58,6 +60,57 @@ class IncidentReport(BaseModel):
 
 class IncidentStatusUpdate(BaseModel):
     status: Literal["open", "acknowledged", "resolved"]
+    reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _normalize_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
+
+
+class IncidentStatusHistoryEntry(BaseModel):
+    history_id: str
+    incident_id: str
+    previous_status: Literal["open", "acknowledged", "resolved"] | None = None
+    status: Literal["open", "acknowledged", "resolved"]
+    changed_at: datetime
+    actor: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+    reason: str | None = None
+
+    @field_validator("history_id", "incident_id", "actor", "source", "reason")
+    @classmethod
+    def _history_non_empty(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
+
+
+class AuditEvent(BaseModel):
+    event_id: str
+    entity_type: str = Field(min_length=1)
+    entity_id: str = Field(min_length=1)
+    action: str = Field(min_length=1)
+    actor: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+    occurred_at: datetime
+    details: dict[str, object] = Field(default_factory=dict)
+
+    @field_validator("event_id", "entity_type", "entity_id", "action", "actor", "source")
+    @classmethod
+    def _audit_non_empty(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
 
 
 class RagDocument(BaseModel):

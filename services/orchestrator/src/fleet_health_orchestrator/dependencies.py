@@ -14,8 +14,9 @@ from fleet_health_orchestrator.agents import (
     RetrieverAgent,
     VerifierAgent,
 )
+from fleet_health_orchestrator.auth_context import RequestIdentity, anonymous_identity
 from fleet_health_orchestrator.config import OrchestratorSettings, get_settings
-from fleet_health_orchestrator.exceptions import DependencyInitializationError
+from fleet_health_orchestrator.exceptions import AuthorizationError, DependencyInitializationError
 from fleet_health_orchestrator.chat_orchestrator import ChatToolOrchestrator
 from fleet_health_orchestrator.logging_config import setup_logging
 from fleet_health_orchestrator.mcp_client_adapter import MCPClientAdapter
@@ -160,3 +161,28 @@ def get_dependencies(request: Request) -> AppDependencies:
 def get_logger(request: Request) -> logging.Logger:
     dependencies = get_dependencies(request)
     return dependencies.logger
+
+
+def get_request_identity(request: Request) -> RequestIdentity:
+    identity = getattr(request.state, "identity", None)
+    if identity is None:
+        return anonymous_identity()
+    return identity
+
+
+def require_any_role(request: Request, expected_roles: list[str]) -> RequestIdentity:
+    identity = get_request_identity(request)
+    if not identity.has_any_role(expected_roles):
+        raise AuthorizationError(
+            "Caller does not have the required role.",
+            details={
+                "required_roles": expected_roles,
+                "provided_roles": sorted(identity.roles),
+            },
+        )
+    return identity
+
+
+def require_mutation_access(request: Request) -> RequestIdentity:
+    dependencies = get_dependencies(request)
+    return require_any_role(request, dependencies.settings.auth_mutation_roles_list)

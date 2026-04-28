@@ -579,7 +579,38 @@ def test_update_incident_status(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "acknowledged"
+    assert response.json()["status_history"][0]["status"] == "acknowledged"
+    assert response.json()["status_history"][0]["previous_status"] == "open"
+    assert response.json()["audit_events"][0]["action"] == "incident.status_updated"
     assert lookup_response.json()["status"] == "acknowledged"
+    assert lookup_response.json()["status_history"][0]["status"] == "acknowledged"
+    assert lookup_response.json()["audit_events"][0]["details"]["to_status"] == "acknowledged"
+
+
+def test_incident_creation_records_initial_history_and_audit_event(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+
+    create_response = client.post(
+        "/v1/orchestrate/event",
+        json={
+            "event_id": "evt_status_history_1",
+            "fleet_id": "fleet-alpha",
+            "device_id": "robot-03",
+            "timestamp": "2026-04-24T08:00:00Z",
+            "metric": "battery_temp_c",
+            "value": 80.0,
+            "threshold": 65.0,
+            "severity": "high",
+            "tags": ["battery", "thermal"]
+        }
+    )
+
+    assert create_response.status_code == 200
+    payload = create_response.json()
+    assert payload["status_history"][0]["status"] == "open"
+    assert payload["status_history"][0]["previous_status"] is None
+    assert payload["audit_events"][0]["action"] == "incident.created"
+    assert payload["audit_events"][0]["details"]["device_id"] == "robot-03"
 
 
 def test_update_incident_status_returns_404_for_unknown_id(tmp_path, monkeypatch) -> None:

@@ -8,7 +8,9 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Header, Path, Query, UploadFile
 
+from fleet_health_orchestrator.auth_context import RequestIdentity
 from fleet_health_orchestrator.dependencies import AppDependencies, get_dependencies
+from fleet_health_orchestrator.dependencies import require_mutation_access
 from fleet_health_orchestrator.exceptions import InvalidRequestError, ReadinessError, ResourceNotFoundError
 from fleet_health_orchestrator.ingestion import (
     build_chunk_documents,
@@ -126,7 +128,8 @@ def _create_incident_from_event(event: TelemetryEvent, dependencies: AppDependen
         incident.confidence_score,
         latency_ms,
     )
-    return incident
+    persisted_incident = dependencies.repository.get_incident(incident.incident_id)
+    return persisted_incident or incident
 
 
 def _persist_and_optionally_index_documents(
@@ -674,6 +677,7 @@ def ingest_event(
         },
     ),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> TelemetryEvent:
     dependencies.repository.insert_event(event)
     dependencies.metrics["events_ingested_total"] += 1
@@ -732,6 +736,7 @@ def create_incident_from_event(
         },
     ),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> IncidentReport:
     return _create_incident_from_event(event, dependencies)
 
@@ -811,9 +816,18 @@ def get_incident(
 )
 def acknowledge_incident(
     incident_id: str = Path(..., description="Unique incident identifier."),
+    x_fleet_actor: str | None = Header(default=None, alias="X-Fleet-Actor"),
+    x_audit_reason: str | None = Header(default=None, alias="X-Audit-Reason"),
     dependencies: AppDependencies = Depends(get_dependencies),
+    identity: RequestIdentity = Depends(require_mutation_access),
 ) -> IncidentReport:
-    incident = dependencies.repository.update_incident_status(incident_id, "acknowledged")
+    incident = dependencies.repository.update_incident_status(
+        incident_id,
+        "acknowledged",
+        actor=(x_fleet_actor or identity.actor_id or "system:api").strip() or "system:api",
+        reason=x_audit_reason.strip() if x_audit_reason and x_audit_reason.strip() else "Incident acknowledged via dedicated endpoint.",
+        source="api.incidents.acknowledge",
+    )
     if incident is None:
         dependencies.logger.warning("Incident not found for acknowledgement: %s", incident_id)
         raise ResourceNotFoundError(
@@ -856,13 +870,21 @@ def update_incident(
         openapi_examples={
             "acknowledge": {
                 "summary": "Mark incident as acknowledged",
-                "value": INCIDENT_STATUS_UPDATE_EXAMPLE,
+                "value": {**INCIDENT_STATUS_UPDATE_EXAMPLE, "reason": "Operator confirmed triage and ownership."},
             }
         },
     ),
+    x_fleet_actor: str | None = Header(default=None, alias="X-Fleet-Actor"),
     dependencies: AppDependencies = Depends(get_dependencies),
+    identity: RequestIdentity = Depends(require_mutation_access),
 ) -> IncidentReport:
-    incident = dependencies.repository.update_incident_status(incident_id, update.status)
+    incident = dependencies.repository.update_incident_status(
+        incident_id,
+        update.status,
+        actor=(x_fleet_actor or identity.actor_id or "system:api").strip() or "system:api",
+        reason=update.reason,
+        source="api.incidents.patch",
+    )
     if incident is None:
         dependencies.logger.warning("Incident not found for update: %s", incident_id)
         raise ResourceNotFoundError(
@@ -892,6 +914,7 @@ def upsert_rag_document(
         },
     ),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> RagIngestionResponse:
     request = RagIngestionRequest(
         document_id=document.document_id,
@@ -963,6 +986,7 @@ def list_rag_documents(
 def delete_rag_document(
     document_id: str = Path(..., description="Base RAG document identifier."),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> RagDeletionResponse:
     cleaned = document_id.strip()
 
@@ -1033,6 +1057,7 @@ async def upload_rag_document(
     chunk_size_chars: int | None = Form(None, description="Optional chunk size override."),
     chunk_overlap_chars: int | None = Form(None, description="Optional chunk overlap override."),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> RagIngestionResponse:
     filename = (file.filename or "uploaded-document").strip()
     if not is_supported_upload(filename):
@@ -1094,6 +1119,7 @@ async def upload_rag_document_async(
     chunk_overlap_chars: int | None = Form(None, description="Optional chunk overlap override."),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> RagIngestionJob:
     normalized_key = (idempotency_key or "").strip() or None
     if normalized_key is not None:
@@ -1271,6 +1297,7 @@ def orchestrate_event(
         },
     ),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> IncidentReport:
     dependencies.repository.insert_event(event)
     dependencies.metrics["events_ingested_total"] += 1
@@ -1297,6 +1324,7 @@ def get_metrics(dependencies: AppDependencies = Depends(get_dependencies)) -> di
 def create_chat_session(
     request: ChatSessionCreateRequest = Body(default=ChatSessionCreateRequest()),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> ChatSession:
     if request.incident_id is not None:
         incident_id = request.incident_id.strip()
@@ -1371,6 +1399,7 @@ def post_chat_message(
         },
     ),
     dependencies: AppDependencies = Depends(get_dependencies),
+    _identity: RequestIdentity = Depends(require_mutation_access),
 ) -> ChatConversation:
     clean_session_id = session_id.strip()
     session_payload = dependencies.repository.get_chat_session(clean_session_id)

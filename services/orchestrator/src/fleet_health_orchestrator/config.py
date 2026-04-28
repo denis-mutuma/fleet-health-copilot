@@ -274,6 +274,53 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("LOG_LEVEL", "FLEET_LOG_LEVEL"),
     )
 
+    # === Request Identity and Authorization Configuration ===
+    auth_required: bool = Field(
+        default=False,
+        description="Require authenticated identity headers on all requests.",
+        validation_alias=AliasChoices("AUTH_REQUIRED", "FLEET_AUTH_REQUIRED"),
+    )
+    auth_enforce_tenant_scope: bool = Field(
+        default=False,
+        description="Require tenant header when authentication is required.",
+        validation_alias=AliasChoices("AUTH_ENFORCE_TENANT_SCOPE", "FLEET_AUTH_ENFORCE_TENANT_SCOPE"),
+    )
+    auth_actor_header: str = Field(
+        default="x-actor-id",
+        description="Header carrying authenticated actor identity.",
+        validation_alias=AliasChoices("AUTH_ACTOR_HEADER", "FLEET_AUTH_ACTOR_HEADER"),
+    )
+    auth_tenant_header: str = Field(
+        default="x-tenant-id",
+        description="Header carrying tenant identifier.",
+        validation_alias=AliasChoices("AUTH_TENANT_HEADER", "FLEET_AUTH_TENANT_HEADER"),
+    )
+    auth_fleet_header: str = Field(
+        default="x-fleet-id",
+        description="Header carrying fleet identifier.",
+        validation_alias=AliasChoices("AUTH_FLEET_HEADER", "FLEET_AUTH_FLEET_HEADER"),
+    )
+    auth_roles_header: str = Field(
+        default="x-roles",
+        description="Comma-separated roles header.",
+        validation_alias=AliasChoices("AUTH_ROLES_HEADER", "FLEET_AUTH_ROLES_HEADER"),
+    )
+    auth_provider_header: str = Field(
+        default="x-auth-provider",
+        description="Header carrying auth provider identifier.",
+        validation_alias=AliasChoices("AUTH_PROVIDER_HEADER", "FLEET_AUTH_PROVIDER_HEADER"),
+    )
+    auth_default_roles: str = Field(
+        default="operator",
+        description="Default roles applied when role header is absent.",
+        validation_alias=AliasChoices("AUTH_DEFAULT_ROLES", "FLEET_AUTH_DEFAULT_ROLES"),
+    )
+    auth_mutation_roles: str = Field(
+        default="operator,admin",
+        description="Roles allowed for mutating endpoints.",
+        validation_alias=AliasChoices("AUTH_MUTATION_ROLES", "FLEET_AUTH_MUTATION_ROLES"),
+    )
+
     @property
     def llm_enabled(self) -> bool:
         """Return whether OpenAI-backed LLM features are available."""
@@ -304,9 +351,26 @@ class OrchestratorSettings(BaseSettings):
             f"database={self.database_target}, "
             f"retrieval_backend={self.retrieval_backend}, "
             f"embedding_provider={self.effective_embedding_provider}, "
+            f"auth_required={self.auth_required}, "
             f"log_level={self.log_level}"
             f")"
         )
+
+    @property
+    def auth_default_roles_list(self) -> list[str]:
+        return [
+            role.strip().lower()
+            for role in self.auth_default_roles.split(",")
+            if role.strip()
+        ]
+
+    @property
+    def auth_mutation_roles_list(self) -> list[str]:
+        return [
+            role.strip().lower()
+            for role in self.auth_mutation_roles.split(",")
+            if role.strip()
+        ]
 
 
 def get_settings() -> OrchestratorSettings:

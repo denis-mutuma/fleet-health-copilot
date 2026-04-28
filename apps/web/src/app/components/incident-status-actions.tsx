@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { readApiErrorMessage } from "@/lib/api";
 import type { IncidentStatus } from "@/lib/incidents";
 
 type IncidentStatusActionsProps = {
@@ -18,6 +19,7 @@ export default function IncidentStatusActions({
     null
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
 
   async function updateStatus(nextStatus: IncidentStatus) {
     setPendingStatus(nextStatus);
@@ -26,14 +28,22 @@ export default function IncidentStatusActions({
     try {
       const response = await fetch(`/api/incidents/${incidentId}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: nextStatus })
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          status: nextStatus,
+          ...(reason.trim() ? { reason: reason.trim() } : {})
+        })
       });
 
       if (!response.ok) {
-        setErrorMessage("Could not update incident status.");
+        const payload = await response.json().catch(() => null);
+        setErrorMessage(readApiErrorMessage(payload, "Could not update incident status."));
         return;
       }
 
+      setReason("");
       router.refresh();
     } catch {
       setErrorMessage("Could not update incident status.");
@@ -52,6 +62,15 @@ export default function IncidentStatusActions({
 
   return (
     <div className="actions-panel">
+      <label className="incident-note-field">
+        <span className="sidebar-label">Operator note</span>
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Capture why the status changed, handoff context, or verification notes."
+          rows={3}
+        />
+      </label>
       <div className="actions action-group-tight">
         {status === "open" ? (
           <button

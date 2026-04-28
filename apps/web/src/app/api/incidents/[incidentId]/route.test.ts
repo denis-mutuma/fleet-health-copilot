@@ -54,7 +54,12 @@ describe("incident status route", () => {
     });
     const payload = await response.json();
 
-    expect(incidentStatusMocks.updateIncidentStatus).toHaveBeenCalledWith("inc_missing", "acknowledged");
+    expect(incidentStatusMocks.updateIncidentStatus).toHaveBeenCalledWith(
+      "inc_missing",
+      "acknowledged",
+      undefined,
+      undefined
+    );
     expect(response.status).toBe(404);
     expect(payload).toEqual({
       detail: "Incident not found.",
@@ -63,5 +68,92 @@ describe("incident status route", () => {
         message: "Incident not found.",
       },
     });
+  });
+
+  it("accepts an optional audit reason and forwards it", async () => {
+    incidentStatusMocks.updateIncidentStatus.mockResolvedValueOnce({
+      incident_id: "inc_123",
+      status: "resolved",
+      status_history: [],
+      audit_events: [],
+    });
+
+    const request = new Request("http://localhost/api/incidents/inc_123", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "resolved", reason: "Operator confirmed recovery." }),
+    });
+
+    const response = await PATCH(request as never, {
+      params: Promise.resolve({ incidentId: "inc_123" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(incidentStatusMocks.updateIncidentStatus).toHaveBeenCalledWith(
+      "inc_123",
+      "resolved",
+      "Operator confirmed recovery.",
+      undefined
+    );
+  });
+
+  it("rejects blank audit reasons", async () => {
+    const request = new Request("http://localhost/api/incidents/inc_123", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "resolved", reason: "   " }),
+    });
+
+    const response = await PATCH(request as never, {
+      params: Promise.resolve({ incidentId: "inc_123" }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload).toEqual({
+      detail: "Incident reason must be a non-empty string when provided.",
+      error: {
+        code: "invalid_request",
+        message: "Incident reason must be a non-empty string when provided.",
+      },
+    });
+  });
+
+  it("forwards identity headers when provided", async () => {
+    incidentStatusMocks.updateIncidentStatus.mockResolvedValueOnce({
+      incident_id: "inc_123",
+      status: "acknowledged",
+      status_history: [],
+      audit_events: [],
+    });
+
+    const request = new Request("http://localhost/api/incidents/inc_123", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        "x-actor-id": "usr_2",
+        "x-tenant-id": "tenant_99",
+        "x-roles": "operator",
+      },
+      body: JSON.stringify({ status: "acknowledged" }),
+    });
+
+    const response = await PATCH(request as never, {
+      params: Promise.resolve({ incidentId: "inc_123" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(incidentStatusMocks.updateIncidentStatus).toHaveBeenCalledWith(
+      "inc_123",
+      "acknowledged",
+      undefined,
+      {
+        actorId: "usr_2",
+        tenantId: "tenant_99",
+        fleetId: undefined,
+        authProvider: undefined,
+        roles: ["operator"],
+      }
+    );
   });
 });

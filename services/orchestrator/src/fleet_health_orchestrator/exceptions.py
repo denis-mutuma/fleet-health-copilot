@@ -57,6 +57,26 @@ class ReadinessError(OrchestratorError):
         )
 
 
+class AuthenticationRequiredError(OrchestratorError):
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(
+            message=message,
+            status_code=401,
+            error_code="authentication_required",
+            details=details or {},
+        )
+
+
+class AuthorizationError(OrchestratorError):
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(
+            message=message,
+            status_code=403,
+            error_code="forbidden",
+            details=details or {},
+        )
+
+
 class DependencyInitializationError(OrchestratorError):
     def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
         super().__init__(

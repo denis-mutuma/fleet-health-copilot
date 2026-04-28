@@ -11,9 +11,12 @@ import time
 from typing import Callable
 
 from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from fleet_health_orchestrator.auth_context import resolve_request_identity
+from fleet_health_orchestrator.config import OrchestratorSettings
 from fleet_health_orchestrator.logging_config import (
     generate_correlation_id,
     get_correlation_id,
@@ -44,6 +47,57 @@ class CorrelationIDMiddleware(BaseHTTPMiddleware):
 
         # Add correlation ID to response header
         response.headers["X-Correlation-ID"] = correlation_id
+
+        return response
+
+
+class AuthContextMiddleware(BaseHTTPMiddleware):
+    """Populate request identity context and optionally enforce authentication."""
+
+    def __init__(self, app: ASGIApp, settings: OrchestratorSettings):
+        super().__init__(app)
+        self.settings = settings
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        identity = resolve_request_identity(request, self.settings)
+        request.state.identity = identity
+
+        if self.settings.auth_required and not identity.authenticated:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "Authentication is required.",
+                    "error": {
+                        "code": "authentication_required",
+                        "message": "Authentication is required.",
+                        "details": {
+                            "required_header": self.settings.auth_actor_header,
+                        },
+                    },
+                },
+            )
+
+        if self.settings.auth_required and self.settings.auth_enforce_tenant_scope and not identity.tenant_id:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "Tenant scope is required.",
+                    "error": {
+                        "code": "tenant_scope_required",
+                        "message": "Tenant scope is required.",
+                        "details": {
+                            "required_header": self.settings.auth_tenant_header,
+                        },
+                    },
+                },
+            )
+
+        response = await call_next(request)
+
+        if identity.tenant_id:
+            response.headers["X-Tenant-ID"] = identity.tenant_id
+        if identity.actor_id:
+            response.headers["X-Actor-ID"] = identity.actor_id
 
         return response
 

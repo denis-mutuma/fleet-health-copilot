@@ -8,9 +8,12 @@ server execution.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
+
+import httpx
 
 
 @dataclass
@@ -30,11 +33,22 @@ class MCPClientAdapter:
         retrieval_backend: Any,
         logger: Any,
         tool_timeout_seconds: float = 8.0,
+        transport: str = "local",
+        retrieval_base_url: str = "http://127.0.0.1:8000",
+        incidents_base_url: str = "http://127.0.0.1:8000",
+        telemetry_base_url: str = "http://127.0.0.1:8000",
     ) -> None:
         self._repository = repository
         self._retrieval_backend = retrieval_backend
         self._logger = logger
         self._tool_timeout_seconds = tool_timeout_seconds
+        self._transport = transport.strip().lower() or "local"
+        self._retrieval_base_url = retrieval_base_url.rstrip("/")
+        self._incidents_base_url = incidents_base_url.rstrip("/")
+        self._telemetry_base_url = telemetry_base_url.rstrip("/")
+
+        if self._transport not in {"local", "http_json"}:
+            raise ValueError("CHAT_TOOL_TRANSPORT must be 'local' or 'http_json'")
 
     def openai_tool_definitions(self) -> list[dict[str, Any]]:
         return [
@@ -131,8 +145,10 @@ class MCPClientAdapter:
 
     def call_tool(self, tool_name: str, params: dict[str, Any]) -> MCPToolResult:
         started_at = perf_counter()
+        executor = ThreadPoolExecutor(max_workers=1)
         try:
-            output = self._call_tool_impl(tool_name, params)
+            future = executor.submit(self._call_tool_impl, tool_name, params)
+            output = future.result(timeout=self._tool_timeout_seconds)
             latency_ms = (perf_counter() - started_at) * 1000
             return MCPToolResult(
                 tool_name=tool_name,
@@ -140,6 +156,17 @@ class MCPClientAdapter:
                 output=output,
                 latency_ms=latency_ms,
                 error=None,
+            )
+        except FutureTimeoutError:
+            latency_ms = (perf_counter() - started_at) * 1000
+            error = f"Tool timed out after {self._tool_timeout_seconds:.1f}s"
+            self._logger.warning("MCP tool timeout: %s", tool_name)
+            return MCPToolResult(
+                tool_name=tool_name,
+                params=params,
+                output={},
+                latency_ms=latency_ms,
+                error=error,
             )
         except Exception as exc:
             latency_ms = (perf_counter() - started_at) * 1000
@@ -151,8 +178,13 @@ class MCPClientAdapter:
                 latency_ms=latency_ms,
                 error=str(exc),
             )
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _call_tool_impl(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+        if self._transport == "http_json":
+            return self._call_tool_http_json(tool_name, params)
+
         if tool_name == "search_operational_context":
             query = str(params.get("query", "")).strip()
             if not query:
@@ -226,6 +258,90 @@ class MCPClientAdapter:
                 for event in self._repository.list_events()
                 if event.device_id == device_id
             ]
+            latest = events[0] if events else None
+            if latest is None:
+                return {
+                    "device_id": device_id,
+                    "status": "unknown",
+                    "latest_event": None,
+                }
+            is_anomalous = float(latest["value"]) > float(latest["threshold"])
+            return {
+                "device_id": device_id,
+                "status": "anomalous" if is_anomalous else "nominal",
+                "latest_event": latest,
+            }
+
+        raise ValueError(f"Unsupported tool: {tool_name}")
+
+    def _call_tool_http_json(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
+        timeout = httpx.Timeout(self._tool_timeout_seconds)
+
+        if tool_name == "search_operational_context":
+            query = str(params.get("query", "")).strip()
+            if not query:
+                raise ValueError("query is required")
+            limit = max(1, min(int(params.get("limit", 5)), 10))
+            response = httpx.get(
+                f"{self._retrieval_base_url}/v1/rag/search",
+                params={"query": query, "limit": limit},
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            return {"query": query, "hits": response.json()}
+
+        if tool_name == "list_incidents":
+            limit = max(1, min(int(params.get("limit", 10)), 50))
+            response = httpx.get(f"{self._incidents_base_url}/v1/incidents", timeout=timeout)
+            response.raise_for_status()
+            return {"incidents": response.json()[:limit]}
+
+        if tool_name == "read_incident":
+            incident_id = str(params.get("incident_id", "")).strip()
+            if not incident_id:
+                raise ValueError("incident_id is required")
+            response = httpx.get(f"{self._incidents_base_url}/v1/incidents/{incident_id}", timeout=timeout)
+            if response.status_code == 404:
+                return {"incident": None}
+            response.raise_for_status()
+            return {"incident": response.json()}
+
+        if tool_name == "update_incident":
+            incident_id = str(params.get("incident_id", "")).strip()
+            status = str(params.get("status", "")).strip().lower()
+            if not incident_id:
+                raise ValueError("incident_id is required")
+            if status not in {"open", "acknowledged", "resolved"}:
+                raise ValueError("status must be one of open|acknowledged|resolved")
+            response = httpx.patch(
+                f"{self._incidents_base_url}/v1/incidents/{incident_id}",
+                json={"status": status},
+                timeout=timeout,
+            )
+            if response.status_code == 404:
+                return {"incident": None}
+            response.raise_for_status()
+            return {"incident": response.json()}
+
+        if tool_name == "query_device_events":
+            device_id = str(params.get("device_id", "")).strip()
+            if not device_id:
+                raise ValueError("device_id is required")
+            limit = max(1, min(int(params.get("limit", 20)), 50))
+            response = httpx.get(f"{self._telemetry_base_url}/v1/events", timeout=timeout)
+            response.raise_for_status()
+            events = [event for event in response.json() if event.get("device_id") == device_id][:limit]
+            return {"device_id": device_id, "events": events}
+
+        if tool_name == "lookup_device_health":
+            device_id = str(params.get("device_id", "")).strip()
+            if not device_id:
+                raise ValueError("device_id is required")
+            events_payload = self._call_tool_http_json(
+                "query_device_events",
+                {"device_id": device_id, "limit": 1},
+            )
+            events = events_payload.get("events", [])
             latest = events[0] if events else None
             if latest is None:
                 return {

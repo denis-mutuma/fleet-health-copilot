@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import time
 
 from fleet_health_orchestrator.chat_orchestrator import ChatToolOrchestrator
 from fleet_health_orchestrator.mcp_client_adapter import MCPClientAdapter
@@ -123,6 +124,8 @@ def test_chat_orchestrator_generates_content_without_tool_calls(monkeypatch) -> 
         llm_chat_temperature=0.2,
         llm_chat_max_output_tokens=400,
         chat_tool_max_calls_per_turn=4,
+        llm_chat_input_cost_per_1k_tokens_usd=0.01,
+        llm_chat_output_cost_per_1k_tokens_usd=0.03,
     )
 
     adapter = MCPClientAdapter(
@@ -146,3 +149,56 @@ def test_chat_orchestrator_generates_content_without_tool_calls(monkeypatch) -> 
     assert result.content == "Use the battery thermal runbook."
     assert result.action == "rag_answer"
     assert result.action_status == "success"
+    assert result.llm_cost_usd == 0.00034
+
+
+def test_mcp_adapter_enforces_tool_timeout() -> None:
+    class SlowBackend:
+        def search(self, query: str, documents: list[dict[str, object]], limit: int = 5):
+            _ = (query, documents, limit)
+            time.sleep(0.05)
+            return []
+
+    adapter = MCPClientAdapter(
+        repository=_FakeRepo(),
+        retrieval_backend=SlowBackend(),
+        logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
+        tool_timeout_seconds=0.01,
+    )
+
+    result = adapter.call_tool("search_operational_context", {"query": "battery"})
+
+    assert result.error is not None
+    assert "timed out" in result.error.lower()
+
+
+def test_mcp_adapter_http_json_transport_for_incident_read(monkeypatch) -> None:
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object], status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_get(url: str, timeout=None, params=None):
+        _ = (timeout, params)
+        assert url.endswith("/v1/incidents/inc_123")
+        return FakeResponse({"incident_id": "inc_123", "status": "open"})
+
+    monkeypatch.setattr("fleet_health_orchestrator.mcp_client_adapter.httpx.get", fake_get)
+
+    adapter = MCPClientAdapter(
+        repository=_FakeRepo(),
+        retrieval_backend=_FakeRetrievalBackend(),
+        logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
+        transport="http_json",
+    )
+
+    result = adapter.call_tool("read_incident", {"incident_id": "inc_123"})
+
+    assert result.error is None
+    assert result.output["incident"]["incident_id"] == "inc_123"

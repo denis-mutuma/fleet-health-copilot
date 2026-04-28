@@ -174,12 +174,61 @@ class OrchestratorSettings(BaseSettings):
         description="Timeout for each MCP tool call during chat (seconds)",
         validation_alias=AliasChoices("CHAT_TOOL_TIMEOUT_SECONDS", "FLEET_CHAT_TOOL_TIMEOUT_SECONDS"),
     )
+    chat_tool_transport: str = Field(
+        default="local",
+        description="Chat tool transport: local or http_json",
+        validation_alias=AliasChoices("CHAT_TOOL_TRANSPORT", "FLEET_CHAT_TOOL_TRANSPORT"),
+    )
+    chat_tool_http_retrieval_base_url: str = Field(
+        default="http://127.0.0.1:8000",
+        description="Base URL for retrieval HTTP JSON tool transport",
+        validation_alias=AliasChoices(
+            "CHAT_TOOL_HTTP_RETRIEVAL_BASE_URL",
+            "FLEET_CHAT_TOOL_HTTP_RETRIEVAL_BASE_URL",
+        ),
+    )
+    chat_tool_http_incidents_base_url: str = Field(
+        default="http://127.0.0.1:8000",
+        description="Base URL for incidents HTTP JSON tool transport",
+        validation_alias=AliasChoices(
+            "CHAT_TOOL_HTTP_INCIDENTS_BASE_URL",
+            "FLEET_CHAT_TOOL_HTTP_INCIDENTS_BASE_URL",
+        ),
+    )
+    chat_tool_http_telemetry_base_url: str = Field(
+        default="http://127.0.0.1:8000",
+        description="Base URL for telemetry HTTP JSON tool transport",
+        validation_alias=AliasChoices(
+            "CHAT_TOOL_HTTP_TELEMETRY_BASE_URL",
+            "FLEET_CHAT_TOOL_HTTP_TELEMETRY_BASE_URL",
+        ),
+    )
     chat_tool_max_calls_per_turn: int = Field(
         default=8,
         ge=1,
         le=50,
         description="Maximum MCP tool calls allowed per chat turn",
         validation_alias=AliasChoices("CHAT_TOOL_MAX_CALLS_PER_TURN", "FLEET_CHAT_TOOL_MAX_CALLS_PER_TURN"),
+    )
+    llm_chat_input_cost_per_1k_tokens_usd: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=10.0,
+        description="Input token price in USD per 1K tokens for chat cost estimation",
+        validation_alias=AliasChoices(
+            "LLM_CHAT_INPUT_COST_PER_1K_TOKENS_USD",
+            "FLEET_LLM_CHAT_INPUT_COST_PER_1K_TOKENS_USD",
+        ),
+    )
+    llm_chat_output_cost_per_1k_tokens_usd: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=10.0,
+        description="Output token price in USD per 1K tokens for chat cost estimation",
+        validation_alias=AliasChoices(
+            "LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD",
+            "FLEET_LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD",
+        ),
     )
 
     openai_embedding_model: str = Field(

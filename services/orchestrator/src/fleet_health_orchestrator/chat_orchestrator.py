@@ -72,6 +72,7 @@ class ChatToolOrchestrator:
         action_status = "success"
         action_payload: dict[str, Any] = {}
         llm_cost_usd: float | None = None
+        accumulated_cost_usd = 0.0
 
         with openai_trace(
             "fleet-health.chat.session",
@@ -97,6 +98,10 @@ class ChatToolOrchestrator:
                 latency_ms = (perf_counter() - started) * 1000
 
                 usage = getattr(response, "usage", None)
+                response_cost_usd = self._estimate_response_cost_usd(usage)
+                if response_cost_usd is not None:
+                    accumulated_cost_usd += response_cost_usd
+                    llm_cost_usd = round(accumulated_cost_usd, 8)
                 trace_spans.append(
                     {
                         "span_name": "openai.chat.completion",
@@ -107,6 +112,7 @@ class ChatToolOrchestrator:
                             "prompt_tokens": getattr(usage, "prompt_tokens", None),
                             "completion_tokens": getattr(usage, "completion_tokens", None),
                             "total_tokens": getattr(usage, "total_tokens", None),
+                            "estimated_cost_usd": response_cost_usd,
                         },
                     }
                 )
@@ -251,3 +257,19 @@ class ChatToolOrchestrator:
             },
             "error": tool_result.error,
         }
+
+    def _estimate_response_cost_usd(self, usage: Any) -> float | None:
+        if usage is None:
+            return None
+
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        if prompt_tokens is None and completion_tokens is None:
+            return None
+
+        input_rate = float(getattr(self._settings, "llm_chat_input_cost_per_1k_tokens_usd", 0.0) or 0.0)
+        output_rate = float(getattr(self._settings, "llm_chat_output_cost_per_1k_tokens_usd", 0.0) or 0.0)
+        prompt_count = float(prompt_tokens or 0)
+        completion_count = float(completion_tokens or 0)
+        estimated_cost = (prompt_count / 1000.0 * input_rate) + (completion_count / 1000.0 * output_rate)
+        return round(estimated_cost, 8)

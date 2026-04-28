@@ -116,6 +116,10 @@ def initialize_dependencies() -> AppDependencies:
             retrieval_backend=retrieval_backend,
             logger=logger,
             tool_timeout_seconds=settings.chat_tool_timeout_seconds,
+            transport=settings.chat_tool_transport,
+            retrieval_base_url=settings.chat_tool_http_retrieval_base_url,
+            incidents_base_url=settings.chat_tool_http_incidents_base_url,
+            telemetry_base_url=settings.chat_tool_http_telemetry_base_url,
         )
         chat_orchestrator = ChatToolOrchestrator(
             logger=logger,

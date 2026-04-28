@@ -245,6 +245,18 @@ Assistant messages can include:
 - `action`: command/action type
 - `action_status`: `success` or `error`
 - `action_payload`: structured action output for UI cards
+- `tool_calls`: MCP tool execution records for the assistant turn (tool name, input, output/error, latency)
+- `trace_spans`: OpenAI and MCP span telemetry (latency, token usage, per-call estimated cost)
+- `llm_cost_usd`: cumulative estimated LLM cost for the assistant turn, derived from token usage and configured rates
+
+Chat execution behavior is controlled by environment settings:
+
+- `LLM_CHAT_ENABLED`, `LLM_CHAT_MODEL`, `LLM_CHAT_TEMPERATURE`, `LLM_CHAT_MAX_OUTPUT_TOKENS`
+- `CHAT_TOOL_TIMEOUT_SECONDS` enforces a hard timeout per tool call
+- `CHAT_TOOL_MAX_CALLS_PER_TURN` caps tool calls per assistant turn
+- `CHAT_TOOL_TRANSPORT=local|http_json` selects local in-process tool execution or remote HTTP JSON API calls
+- `CHAT_TOOL_HTTP_RETRIEVAL_BASE_URL`, `CHAT_TOOL_HTTP_INCIDENTS_BASE_URL`, `CHAT_TOOL_HTTP_TELEMETRY_BASE_URL` configure HTTP JSON transport endpoints
+- `LLM_CHAT_INPUT_COST_PER_1K_TOKENS_USD`, `LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD` configure cost estimation rates
 
 Supported command patterns in message content:
 

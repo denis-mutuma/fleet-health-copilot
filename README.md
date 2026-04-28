@@ -192,6 +192,22 @@ IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or
 
 **OpenAI LLM calls** (requires `FLEET_OPENAI_API_KEY`): incident summary refinement, diagnosis generation/enrichment, and action planning use OpenAI Responses API calls with traces, defaulting to `gpt-5.4-mini` (`LLM_REPORT_MODEL`, `LLM_DIAGNOSIS_MODEL`).
 
+**OpenAI chat orchestration** (optional):
+
+- Enable with `LLM_CHAT_ENABLED=true`.
+- Chat model controls: `LLM_CHAT_MODEL`, `LLM_CHAT_TEMPERATURE`, `LLM_CHAT_MAX_OUTPUT_TOKENS`.
+- Tool safety controls: `CHAT_TOOL_TIMEOUT_SECONDS` (hard timeout per tool call) and `CHAT_TOOL_MAX_CALLS_PER_TURN` (turn-level cap).
+- Tool transport:
+	- `CHAT_TOOL_TRANSPORT=local` keeps in-process MCP-style tool execution.
+	- `CHAT_TOOL_TRANSPORT=http_json` uses remote HTTP JSON endpoints configured with:
+		- `CHAT_TOOL_HTTP_RETRIEVAL_BASE_URL`
+		- `CHAT_TOOL_HTTP_INCIDENTS_BASE_URL`
+		- `CHAT_TOOL_HTTP_TELEMETRY_BASE_URL`
+- Cost telemetry:
+	- `LLM_CHAT_INPUT_COST_PER_1K_TOKENS_USD`
+	- `LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD`
+	- Assistant chat messages persist `llm_cost_usd` estimated from OpenAI token usage.
+
 **RAG ingestion API**:
 
 - `POST /v1/rag/documents` ingests raw text payloads and chunks them for retrieval.

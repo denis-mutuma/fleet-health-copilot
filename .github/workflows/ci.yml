@@ -1,0 +1,234 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Orchestrator — Python tests against SQLite (fast, no external services)
+  # ---------------------------------------------------------------------------
+  orchestrator-sqlite:
+    name: "Orchestrator / Python ${{ matrix.python-version }} / SQLite"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('services/orchestrator/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install orchestrator + dev dependencies
+        run: pip install -e "services/orchestrator[dev]"
+
+      - name: Run orchestrator tests (SQLite)
+        working-directory: services/orchestrator
+        run: pytest -q --tb=short tests/
+
+  # ---------------------------------------------------------------------------
+  # Orchestrator — Python tests against PostgreSQL
+  # ---------------------------------------------------------------------------
+  orchestrator-postgres:
+    name: "Orchestrator / Python 3.12 / PostgreSQL"
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fleet
+          POSTGRES_PASSWORD: fleet
+          POSTGRES_DB: fleet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fleet -d fleet_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-3.12-pg-${{ hashFiles('services/orchestrator/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-3.12-pg-
+
+      - name: Install orchestrator + dev dependencies
+        run: pip install -e "services/orchestrator[dev]"
+
+      - name: Run orchestrator tests (PostgreSQL)
+        working-directory: services/orchestrator
+        env:
+          DATABASE_URL: postgresql://fleet:fleet@localhost:5432/fleet_test
+        run: pytest -q --tb=short tests/
+
+  # ---------------------------------------------------------------------------
+  # Migration smoke test — applies ALL_MIGRATIONS to a fresh Postgres DB
+  # ---------------------------------------------------------------------------
+  migration-smoke:
+    name: "Migration smoke / PostgreSQL"
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fleet
+          POSTGRES_PASSWORD: fleet
+          POSTGRES_DB: fleet_migrations
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fleet -d fleet_migrations"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install orchestrator
+        run: pip install -e "services/orchestrator[dev]"
+
+      - name: Apply migrations to fresh PostgreSQL database
+        run: |
+          python - <<'EOF'
+          from fleet_health_orchestrator.migrations import ALL_MIGRATIONS
+          from fleet_health_orchestrator.migrations.runner import apply_migrations
+          from datetime import datetime, timezone
+          import psycopg
+          from psycopg.rows import dict_row
+
+          db_url = "postgresql://fleet:fleet@localhost:5432/fleet_migrations"
+          conn = psycopg.connect(db_url, row_factory=dict_row)
+          apply_migrations(
+              conn,
+              ALL_MIGRATIONS,
+              use_postgres=True,
+              now_iso=datetime.now(timezone.utc).isoformat(),
+          )
+          conn.commit()
+
+          # Verify every migration was recorded
+          applied = [
+              row["migration_id"]
+              for row in conn.execute(
+                  "SELECT migration_id FROM schema_migrations ORDER BY applied_at"
+              ).fetchall()
+          ]
+          expected = [m["id"] for m in ALL_MIGRATIONS]
+          assert applied == expected, f"Expected {expected}, got {applied}"
+          print(f"All {len(applied)} migrations applied: {applied}")
+          conn.close()
+          EOF
+
+      - name: Verify idempotent re-apply (second run must succeed without error)
+        run: |
+          python - <<'EOF'
+          from fleet_health_orchestrator.migrations import ALL_MIGRATIONS
+          from fleet_health_orchestrator.migrations.runner import apply_migrations
+          from datetime import datetime, timezone
+          import psycopg
+          from psycopg.rows import dict_row
+
+          db_url = "postgresql://fleet:fleet@localhost:5432/fleet_migrations"
+          conn = psycopg.connect(db_url, row_factory=dict_row)
+          apply_migrations(
+              conn,
+              ALL_MIGRATIONS,
+              use_postgres=True,
+              now_iso=datetime.now(timezone.utc).isoformat(),
+          )
+          conn.commit()
+          print("Idempotent re-apply succeeded.")
+          conn.close()
+          EOF
+
+  # ---------------------------------------------------------------------------
+  # Web (Next.js) — lint + vitest unit tests
+  # ---------------------------------------------------------------------------
+  web:
+    name: "Web / Node ${{ matrix.node-version }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm --workspace apps/web run lint
+
+      - name: Unit tests
+        run: npm --workspace apps/web run test
+
+  # ---------------------------------------------------------------------------
+  # MCP services — pytest on each service
+  # ---------------------------------------------------------------------------
+  mcp-services:
+    name: "MCP services / Python 3.12"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-mcp-3.12-${{ hashFiles('services/mcp-*/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-mcp-3.12-
+
+      - name: Install MCP services
+        run: |
+          pip install -e services/mcp-telemetry \
+                      -e services/mcp-retrieval \
+                      -e services/mcp-incidents \
+                      pytest
+
+      - name: Run MCP service tests
+        run: |
+          PYTHONPATH=services/mcp-telemetry/src pytest -q --tb=short services/mcp-telemetry/tests/
+          PYTHONPATH=services/mcp-retrieval/src  pytest -q --tb=short services/mcp-retrieval/tests/
+          PYTHONPATH=services/mcp-incidents/src  pytest -q --tb=short services/mcp-incidents/tests/

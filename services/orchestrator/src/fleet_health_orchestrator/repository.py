@@ -65,6 +65,7 @@ class FleetRepository:
                 """
                 CREATE TABLE IF NOT EXISTS events (
                     event_id TEXT PRIMARY KEY,
+                    tenant_id TEXT,
                     fleet_id TEXT NOT NULL,
                     device_id TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
@@ -80,6 +81,7 @@ class FleetRepository:
                 """
                 CREATE TABLE IF NOT EXISTS incidents (
                     incident_id TEXT PRIMARY KEY,
+                    tenant_id TEXT,
                     device_id TEXT NOT NULL,
                     status TEXT NOT NULL,
                     summary TEXT NOT NULL,
@@ -95,11 +97,31 @@ class FleetRepository:
             )
 
             optional_columns = {
+                "tenant_id": "TEXT",
                 "confidence_score": "DOUBLE PRECISION NOT NULL DEFAULT 0.0",
                 "agent_trace_json": "TEXT NOT NULL DEFAULT '[]'",
                 "verification_json": "TEXT NOT NULL DEFAULT '{}'",
                 "latency_ms": "DOUBLE PRECISION NOT NULL DEFAULT 0.0",
             }
+
+            event_optional_columns = {
+                "tenant_id": "TEXT",
+            }
+            if self._use_postgres:
+                for column, definition in event_optional_columns.items():
+                    connection.execute(
+                        f"ALTER TABLE events ADD COLUMN IF NOT EXISTS {column} {definition}"
+                    )
+            else:
+                event_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(events)").fetchall()
+                }
+                for column, definition in event_optional_columns.items():
+                    if column not in event_columns:
+                        connection.execute(
+                            f"ALTER TABLE events ADD COLUMN {column} {definition}"
+                        )
 
             if self._use_postgres:
                 for column, definition in optional_columns.items():
@@ -121,6 +143,7 @@ class FleetRepository:
                 """
                 CREATE TABLE IF NOT EXISTS rag_documents (
                     document_id TEXT PRIMARY KEY,
+                    tenant_id TEXT,
                     source TEXT NOT NULL,
                     title TEXT NOT NULL,
                     content TEXT NOT NULL,
@@ -134,6 +157,7 @@ class FleetRepository:
                     """
                     CREATE TABLE IF NOT EXISTS rag_ingestion_jobs (
                         job_id TEXT PRIMARY KEY,
+                        tenant_id TEXT,
                         status TEXT NOT NULL,
                         source TEXT NOT NULL,
                         title TEXT NOT NULL,
@@ -151,6 +175,7 @@ class FleetRepository:
                     """
                     CREATE TABLE IF NOT EXISTS rag_ingestion_jobs (
                         job_id TEXT PRIMARY KEY,
+                        tenant_id TEXT,
                         status TEXT NOT NULL,
                         source TEXT NOT NULL,
                         title TEXT NOT NULL,
@@ -182,6 +207,7 @@ class FleetRepository:
                     """
                     CREATE TABLE IF NOT EXISTS chat_sessions (
                         session_id TEXT PRIMARY KEY,
+                        tenant_id TEXT,
                         incident_id TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
@@ -190,6 +216,7 @@ class FleetRepository:
                     """
                     CREATE TABLE IF NOT EXISTS chat_sessions (
                         session_id TEXT PRIMARY KEY,
+                        tenant_id TEXT,
                         incident_id TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
@@ -267,6 +294,7 @@ class FleetRepository:
                     CREATE TABLE IF NOT EXISTS incident_status_history (
                         history_id TEXT PRIMARY KEY,
                         incident_id TEXT NOT NULL,
+                        tenant_id TEXT,
                         previous_status TEXT,
                         status TEXT NOT NULL,
                         changed_at TEXT NOT NULL,
@@ -280,6 +308,7 @@ class FleetRepository:
                     CREATE TABLE IF NOT EXISTS incident_status_history (
                         history_id TEXT PRIMARY KEY,
                         incident_id TEXT NOT NULL REFERENCES incidents(incident_id),
+                        tenant_id TEXT,
                         previous_status TEXT,
                         status TEXT NOT NULL,
                         changed_at TEXT NOT NULL,
@@ -299,6 +328,7 @@ class FleetRepository:
                     """
                     CREATE TABLE IF NOT EXISTS audit_events (
                         event_id TEXT PRIMARY KEY,
+                        tenant_id TEXT,
                         entity_type TEXT NOT NULL,
                         entity_id TEXT NOT NULL,
                         action TEXT NOT NULL,
@@ -311,6 +341,7 @@ class FleetRepository:
                     """
                     CREATE TABLE IF NOT EXISTS audit_events (
                         event_id TEXT PRIMARY KEY,
+                        tenant_id TEXT,
                         entity_type TEXT NOT NULL,
                         entity_id TEXT NOT NULL,
                         action TEXT NOT NULL,
@@ -335,6 +366,7 @@ class FleetRepository:
     ) -> IncidentReport:
         return IncidentReport(
             incident_id=row["incident_id"],
+            tenant_id=row.get("tenant_id") if hasattr(row, "get") else row["tenant_id"],
             device_id=row["device_id"],
             status=row["status"],
             summary=row["summary"],
@@ -368,6 +400,7 @@ class FleetRepository:
         return [
             AuditEvent(
                 event_id=row["event_id"],
+                tenant_id=row.get("tenant_id") if hasattr(row, "get") else row["tenant_id"],
                 entity_type=row["entity_type"],
                 entity_id=row["entity_id"],
                 action=row["action"],
@@ -403,13 +436,13 @@ class FleetRepository:
         rows = connection.execute(
             self._sql(
                 """
-                SELECT event_id, entity_type, entity_id, action, actor, source, details_json, occurred_at
+                SELECT event_id, tenant_id, entity_type, entity_id, action, actor, source, details_json, occurred_at
                 FROM audit_events
                 WHERE entity_type = ? AND entity_id = ?
                 ORDER BY occurred_at DESC, event_id DESC
                 """,
                 """
-                SELECT event_id, entity_type, entity_id, action, actor, source, details_json, occurred_at
+                SELECT event_id, tenant_id, entity_type, entity_id, action, actor, source, details_json, occurred_at
                 FROM audit_events
                 WHERE entity_type = %s AND entity_id = %s
                 ORDER BY occurred_at DESC, event_id DESC
@@ -419,11 +452,50 @@ class FleetRepository:
         ).fetchall()
         return self._audit_events_from_rows(rows)
 
+    def list_audit_events(
+        self,
+        *,
+        limit: int = 100,
+        tenant_id: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+    ) -> list[AuditEvent]:
+        capped_limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[object] = []
+
+        placeholder = "%s" if self._use_postgres else "?"
+
+        if tenant_id is not None:
+            conditions.append(f"tenant_id = {placeholder}")
+            params.append(tenant_id)
+        if entity_type is not None:
+            conditions.append(f"entity_type = {placeholder}")
+            params.append(entity_type)
+        if entity_id is not None:
+            conditions.append(f"entity_id = {placeholder}")
+            params.append(entity_id)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = (
+            "SELECT event_id, tenant_id, entity_type, entity_id, action, actor, source, details_json, occurred_at "
+            "FROM audit_events "
+            f"{where_clause} "
+            "ORDER BY occurred_at DESC, event_id DESC "
+            f"LIMIT {placeholder}"
+        )
+        params.append(capped_limit)
+
+        with self._connect() as connection:
+            rows = connection.execute(query, tuple(params)).fetchall()
+        return self._audit_events_from_rows(rows)
+
     def _record_incident_status_history(
         self,
         connection: Any,
         *,
         incident_id: str,
+        tenant_id: str | None,
         previous_status: str | None,
         status: str,
         actor: str,
@@ -434,18 +506,19 @@ class FleetRepository:
             self._sql(
                 """
                 INSERT INTO incident_status_history
-                (history_id, incident_id, previous_status, status, changed_at, actor, source, reason)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (history_id, incident_id, tenant_id, previous_status, status, changed_at, actor, source, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 """
                 INSERT INTO incident_status_history
-                (history_id, incident_id, previous_status, status, changed_at, actor, source, reason)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (history_id, incident_id, tenant_id, previous_status, status, changed_at, actor, source, reason)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
             ),
             (
                 f"hist_{uuid4().hex}",
                 incident_id,
+                tenant_id,
                 previous_status,
                 status,
                 _utc_now_iso(),
@@ -459,6 +532,7 @@ class FleetRepository:
         self,
         connection: Any,
         *,
+        tenant_id: str | None,
         entity_type: str,
         entity_id: str,
         action: str,
@@ -470,17 +544,18 @@ class FleetRepository:
             self._sql(
                 """
                 INSERT INTO audit_events
-                (event_id, entity_type, entity_id, action, actor, source, details_json, occurred_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (event_id, tenant_id, entity_type, entity_id, action, actor, source, details_json, occurred_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 """
                 INSERT INTO audit_events
-                (event_id, entity_type, entity_id, action, actor, source, details_json, occurred_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (event_id, tenant_id, entity_type, entity_id, action, actor, source, details_json, occurred_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
             ),
             (
                 f"audit_{uuid4().hex}",
+                tenant_id,
                 entity_type,
                 entity_id,
                 action,
@@ -503,6 +578,7 @@ class FleetRepository:
             self._record_incident_status_history(
                 connection,
                 incident_id=incident.incident_id,
+                tenant_id=incident.tenant_id,
                 previous_status=None,
                 status=incident.status,
                 actor="system:orchestrator",
@@ -520,6 +596,7 @@ class FleetRepository:
         if audit_exists is None:
             self._record_audit_event(
                 connection,
+                tenant_id=incident.tenant_id,
                 entity_type="incident",
                 entity_id=incident.incident_id,
                 action="incident.created",
@@ -532,20 +609,21 @@ class FleetRepository:
                 },
             )
 
-    def insert_event(self, event: TelemetryEvent) -> None:
+    def insert_event(self, event: TelemetryEvent, *, tenant_id: str | None = None) -> None:
         with self._connect() as connection:
             connection.execute(
                 self._sql(
                     """
                     INSERT OR REPLACE INTO events
-                    (event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        (event_id, tenant_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     """
                     INSERT INTO events
-                    (event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        (event_id, tenant_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (event_id) DO UPDATE SET
+                                            tenant_id = EXCLUDED.tenant_id,
                       fleet_id = EXCLUDED.fleet_id,
                       device_id = EXCLUDED.device_id,
                       timestamp = EXCLUDED.timestamp,
@@ -558,6 +636,7 @@ class FleetRepository:
                 ),
                 (
                     event.event_id,
+                    tenant_id,
                     event.fleet_id,
                     event.device_id,
                     event.timestamp.isoformat(),
@@ -569,15 +648,34 @@ class FleetRepository:
                 )
             )
 
-    def list_events(self) -> list[TelemetryEvent]:
+    def list_events(self, *, tenant_id: str | None = None) -> list[TelemetryEvent]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json
-                FROM events
-                ORDER BY timestamp DESC
-                """
-            ).fetchall()
+            if tenant_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json
+                    FROM events
+                    ORDER BY timestamp DESC
+                    """
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    self._sql(
+                        """
+                        SELECT event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json
+                        FROM events
+                        WHERE tenant_id = ?
+                        ORDER BY timestamp DESC
+                        """,
+                        """
+                        SELECT event_id, fleet_id, device_id, timestamp, metric, value, threshold, severity, tags_json
+                        FROM events
+                        WHERE tenant_id = %s
+                        ORDER BY timestamp DESC
+                        """,
+                    ),
+                    (tenant_id,),
+                ).fetchall()
 
         return [
             TelemetryEvent(
@@ -594,7 +692,7 @@ class FleetRepository:
             for row in rows
         ]
 
-    def insert_incident(self, incident: IncidentReport) -> None:
+    def insert_incident(self, incident: IncidentReport, *, tenant_id: str | None = None) -> None:
         with self._connect() as connection:
             connection.execute(
                 self._sql(
@@ -602,6 +700,7 @@ class FleetRepository:
                     INSERT OR REPLACE INTO incidents
                     (
                         incident_id,
+                        tenant_id,
                         device_id,
                         status,
                         summary,
@@ -613,12 +712,13 @@ class FleetRepository:
                         verification_json,
                         latency_ms
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     """
                     INSERT INTO incidents
                     (
                         incident_id,
+                        tenant_id,
                         device_id,
                         status,
                         summary,
@@ -630,8 +730,9 @@ class FleetRepository:
                         verification_json,
                         latency_ms
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (incident_id) DO UPDATE SET
+                                            tenant_id = EXCLUDED.tenant_id,
                       device_id = EXCLUDED.device_id,
                       status = EXCLUDED.status,
                       summary = EXCLUDED.summary,
@@ -646,6 +747,7 @@ class FleetRepository:
                 ),
                 (
                     incident.incident_id,
+                    tenant_id,
                     incident.device_id,
                     incident.status,
                     incident.summary,
@@ -658,37 +760,74 @@ class FleetRepository:
                     incident.latency_ms
                 )
             )
-            self._ensure_incident_lifecycle_records(connection, incident)
+            incident_for_lifecycle = incident.model_copy(update={"tenant_id": tenant_id})
+            self._ensure_incident_lifecycle_records(connection, incident_for_lifecycle)
 
-    def list_incidents(self) -> list[IncidentReport]:
+    def list_incidents(self, *, tenant_id: str | None = None) -> list[IncidentReport]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
-                FROM incidents
-                ORDER BY incident_id DESC
-                """
-            ).fetchall()
+            if tenant_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT incident_id, tenant_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
+                    FROM incidents
+                    ORDER BY incident_id DESC
+                    """
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    self._sql(
+                        """
+                        SELECT incident_id, tenant_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
+                        FROM incidents
+                        WHERE tenant_id = ?
+                        ORDER BY incident_id DESC
+                        """,
+                        """
+                        SELECT incident_id, tenant_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
+                        FROM incidents
+                        WHERE tenant_id = %s
+                        ORDER BY incident_id DESC
+                        """,
+                    ),
+                    (tenant_id,),
+                ).fetchall()
 
         return [self._incident_from_row(row) for row in rows]
 
-    def get_incident(self, incident_id: str) -> IncidentReport | None:
+    def get_incident(self, incident_id: str, *, tenant_id: str | None = None) -> IncidentReport | None:
         with self._connect() as connection:
-            row = connection.execute(
-                self._sql(
-                    """
-                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
-                FROM incidents
-                WHERE incident_id = ?
-                """,
-                    """
-                SELECT incident_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
-                FROM incidents
-                WHERE incident_id = %s
-                """,
-                ),
-                (incident_id,)
-            ).fetchone()
+            if tenant_id is None:
+                row = connection.execute(
+                    self._sql(
+                        """
+                    SELECT incident_id, tenant_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
+                    FROM incidents
+                    WHERE incident_id = ?
+                    """,
+                        """
+                    SELECT incident_id, tenant_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
+                    FROM incidents
+                    WHERE incident_id = %s
+                    """,
+                    ),
+                    (incident_id,),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    self._sql(
+                        """
+                    SELECT incident_id, tenant_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
+                    FROM incidents
+                    WHERE incident_id = ? AND tenant_id = ?
+                    """,
+                        """
+                    SELECT incident_id, tenant_id, device_id, status, summary, root_cause_hypotheses_json, recommended_actions_json, evidence_json, confidence_score, agent_trace_json, verification_json, latency_ms
+                    FROM incidents
+                    WHERE incident_id = %s AND tenant_id = %s
+                    """,
+                    ),
+                    (incident_id, tenant_id),
+                ).fetchone()
 
             if row is None:
                 return None
@@ -710,15 +849,25 @@ class FleetRepository:
         actor: str = "system:api",
         reason: str | None = None,
         source: str = "api.incidents",
+        tenant_id: str | None = None,
     ) -> IncidentReport | None:
         with self._connect() as connection:
-            existing = connection.execute(
-                self._sql(
-                    "SELECT status FROM incidents WHERE incident_id = ?",
-                    "SELECT status FROM incidents WHERE incident_id = %s",
-                ),
-                (incident_id,),
-            ).fetchone()
+            if tenant_id is None:
+                existing = connection.execute(
+                    self._sql(
+                        "SELECT status FROM incidents WHERE incident_id = ?",
+                        "SELECT status FROM incidents WHERE incident_id = %s",
+                    ),
+                    (incident_id,),
+                ).fetchone()
+            else:
+                existing = connection.execute(
+                    self._sql(
+                        "SELECT status FROM incidents WHERE incident_id = ? AND tenant_id = ?",
+                        "SELECT status FROM incidents WHERE incident_id = %s AND tenant_id = %s",
+                    ),
+                    (incident_id, tenant_id),
+                ).fetchone()
             if existing is None:
                 return None
 
@@ -747,6 +896,7 @@ class FleetRepository:
                 self._record_incident_status_history(
                     connection,
                     incident_id=incident_id,
+                    tenant_id=tenant_id,
                     previous_status=previous_status,
                     status=status,
                     actor=actor,
@@ -755,6 +905,7 @@ class FleetRepository:
                 )
                 self._record_audit_event(
                     connection,
+                    tenant_id=tenant_id,
                     entity_type="incident",
                     entity_id=incident_id,
                     action="incident.status_updated",
@@ -770,7 +921,7 @@ class FleetRepository:
         if row_count == 0:
             return None
 
-        return self.get_incident(incident_id)
+        return self.get_incident(incident_id, tenant_id=tenant_id)
 
     def insert_rag_document(
         self,
@@ -778,21 +929,24 @@ class FleetRepository:
         source: str,
         title: str,
         content: str,
-        tags: list[str]
+        tags: list[str],
+        *,
+        tenant_id: str | None = None,
     ) -> None:
         with self._connect() as connection:
             connection.execute(
                 self._sql(
                     """
                     INSERT OR REPLACE INTO rag_documents
-                    (document_id, source, title, content, tags_json)
-                    VALUES (?, ?, ?, ?, ?)
+                    (document_id, tenant_id, source, title, content, tags_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     """
                     INSERT INTO rag_documents
-                    (document_id, source, title, content, tags_json)
-                    VALUES (%s, %s, %s, %s, %s)
+                    (document_id, tenant_id, source, title, content, tags_json)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (document_id) DO UPDATE SET
+                      tenant_id = EXCLUDED.tenant_id,
                       source = EXCLUDED.source,
                       title = EXCLUDED.title,
                       content = EXCLUDED.content,
@@ -801,6 +955,7 @@ class FleetRepository:
                 ),
                 (
                     document_id,
+                    tenant_id,
                     source,
                     title,
                     content,
@@ -808,18 +963,36 @@ class FleetRepository:
                 )
             )
 
-    def list_rag_documents(self) -> list[dict[str, object]]:
+    def list_rag_documents(self, *, tenant_id: str | None = None) -> list[dict[str, object]]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT document_id, source, title, content, tags_json
-                FROM rag_documents
-                """
-            ).fetchall()
+            if tenant_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT document_id, tenant_id, source, title, content, tags_json
+                    FROM rag_documents
+                    """
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    self._sql(
+                        """
+                        SELECT document_id, tenant_id, source, title, content, tags_json
+                        FROM rag_documents
+                        WHERE tenant_id = ?
+                        """,
+                        """
+                        SELECT document_id, tenant_id, source, title, content, tags_json
+                        FROM rag_documents
+                        WHERE tenant_id = %s
+                        """,
+                    ),
+                    (tenant_id,),
+                ).fetchall()
 
         return [
             {
                 "document_id": row["document_id"],
+                "tenant_id": row["tenant_id"],
                 "source": row["source"],
                 "title": row["title"],
                 "content": row["content"],
@@ -828,21 +1001,36 @@ class FleetRepository:
             for row in rows
         ]
 
-    def delete_rag_document_family(self, document_id: str) -> int:
+    def delete_rag_document_family(self, document_id: str, *, tenant_id: str | None = None) -> int:
         with self._connect() as connection:
-            cursor = connection.execute(
-                self._sql(
-                    """
-                    DELETE FROM rag_documents
-                    WHERE document_id = ? OR document_id LIKE ?
-                    """,
-                    """
-                    DELETE FROM rag_documents
-                    WHERE document_id = %s OR document_id LIKE %s
-                    """,
-                ),
-                (document_id, f"{document_id}#chunk-%"),
-            )
+            if tenant_id is None:
+                cursor = connection.execute(
+                    self._sql(
+                        """
+                        DELETE FROM rag_documents
+                        WHERE document_id = ? OR document_id LIKE ?
+                        """,
+                        """
+                        DELETE FROM rag_documents
+                        WHERE document_id = %s OR document_id LIKE %s
+                        """,
+                    ),
+                    (document_id, f"{document_id}#chunk-%"),
+                )
+            else:
+                cursor = connection.execute(
+                    self._sql(
+                        """
+                        DELETE FROM rag_documents
+                        WHERE tenant_id = ? AND (document_id = ? OR document_id LIKE ?)
+                        """,
+                        """
+                        DELETE FROM rag_documents
+                        WHERE tenant_id = %s AND (document_id = %s OR document_id LIKE %s)
+                        """,
+                    ),
+                    (tenant_id, document_id, f"{document_id}#chunk-%"),
+                )
 
         return int(cursor.rowcount)
 
@@ -850,6 +1038,7 @@ class FleetRepository:
         self,
         *,
         job_id: str,
+        tenant_id: str | None,
         source: str,
         title: str,
         tags: list[str],
@@ -862,17 +1051,18 @@ class FleetRepository:
                 self._sql(
                     """
                     INSERT INTO rag_ingestion_jobs
-                    (job_id, status, source, title, tags_json, filename, idempotency_key, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     """
                     INSERT INTO rag_ingestion_jobs
-                    (job_id, status, source, title, tags_json, filename, idempotency_key, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                 ),
                 (
                     job_id,
+                    tenant_id,
                     "pending",
                     source,
                     title,
@@ -930,31 +1120,51 @@ class FleetRepository:
                 ),
             )
 
-    def get_rag_ingestion_job(self, job_id: str) -> dict[str, object] | None:
+    def get_rag_ingestion_job(self, job_id: str, *, tenant_id: str | None = None) -> dict[str, object] | None:
         with self._connect() as connection:
-            row = connection.execute(
-                self._sql(
-                    """
-                    SELECT job_id, status, source, title, tags_json, filename, idempotency_key,
-                           document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
-                    FROM rag_ingestion_jobs
-                    WHERE job_id = ?
-                    """,
-                    """
-                    SELECT job_id, status, source, title, tags_json, filename, idempotency_key,
-                           document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
-                    FROM rag_ingestion_jobs
-                    WHERE job_id = %s
-                    """,
-                ),
-                (job_id,),
-            ).fetchone()
+            if tenant_id is None:
+                row = connection.execute(
+                    self._sql(
+                        """
+                        SELECT job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key,
+                               document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                        FROM rag_ingestion_jobs
+                        WHERE job_id = ?
+                        """,
+                        """
+                        SELECT job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key,
+                               document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                        FROM rag_ingestion_jobs
+                        WHERE job_id = %s
+                        """,
+                    ),
+                    (job_id,),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    self._sql(
+                        """
+                        SELECT job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key,
+                               document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                        FROM rag_ingestion_jobs
+                        WHERE job_id = ? AND tenant_id = ?
+                        """,
+                        """
+                        SELECT job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key,
+                               document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                        FROM rag_ingestion_jobs
+                        WHERE job_id = %s AND tenant_id = %s
+                        """,
+                    ),
+                    (job_id, tenant_id),
+                ).fetchone()
 
         if row is None:
             return None
 
         return {
             "job_id": row["job_id"],
+            "tenant_id": row["tenant_id"],
             "status": row["status"],
             "source": row["source"],
             "title": row["title"],
@@ -972,54 +1182,97 @@ class FleetRepository:
     def get_rag_ingestion_job_by_idempotency_key(
         self,
         idempotency_key: str,
+        *,
+        tenant_id: str | None = None,
     ) -> dict[str, object] | None:
         with self._connect() as connection:
-            row = connection.execute(
-                self._sql(
-                    """
-                    SELECT job_id
-                    FROM rag_ingestion_jobs
-                    WHERE idempotency_key = ?
-                    """,
-                    """
-                    SELECT job_id
-                    FROM rag_ingestion_jobs
-                    WHERE idempotency_key = %s
-                    """,
-                ),
-                (idempotency_key,),
-            ).fetchone()
+            if tenant_id is None:
+                row = connection.execute(
+                    self._sql(
+                        """
+                        SELECT job_id
+                        FROM rag_ingestion_jobs
+                        WHERE idempotency_key = ?
+                        """,
+                        """
+                        SELECT job_id
+                        FROM rag_ingestion_jobs
+                        WHERE idempotency_key = %s
+                        """,
+                    ),
+                    (idempotency_key,),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    self._sql(
+                        """
+                        SELECT job_id
+                        FROM rag_ingestion_jobs
+                        WHERE idempotency_key = ? AND tenant_id = ?
+                        """,
+                        """
+                        SELECT job_id
+                        FROM rag_ingestion_jobs
+                        WHERE idempotency_key = %s AND tenant_id = %s
+                        """,
+                    ),
+                    (idempotency_key, tenant_id),
+                ).fetchone()
 
         if row is None:
             return None
-        return self.get_rag_ingestion_job(str(row["job_id"]))
+        return self.get_rag_ingestion_job(str(row["job_id"]), tenant_id=tenant_id)
 
-    def list_rag_ingestion_jobs(self, limit: int = 20) -> list[dict[str, object]]:
+    def list_rag_ingestion_jobs(self, limit: int = 20, *, tenant_id: str | None = None) -> list[dict[str, object]]:
         capped_limit = max(1, min(limit, 200))
         with self._connect() as connection:
-            rows = connection.execute(
-                self._sql(
-                    """
-                    SELECT job_id, status, source, title, tags_json, filename, idempotency_key,
-                           document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
-                    FROM rag_ingestion_jobs
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    """
-                    SELECT job_id, status, source, title, tags_json, filename, idempotency_key,
-                           document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
-                    FROM rag_ingestion_jobs
-                    ORDER BY updated_at DESC
-                    LIMIT %s
-                    """,
-                ),
-                (capped_limit,),
-            ).fetchall()
+            if tenant_id is None:
+                rows = connection.execute(
+                    self._sql(
+                        """
+                        SELECT job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key,
+                               document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                        FROM rag_ingestion_jobs
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        """
+                        SELECT job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key,
+                               document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                        FROM rag_ingestion_jobs
+                        ORDER BY updated_at DESC
+                        LIMIT %s
+                        """,
+                    ),
+                    (capped_limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    self._sql(
+                        """
+                        SELECT job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key,
+                               document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                        FROM rag_ingestion_jobs
+                        WHERE tenant_id = ?
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        """
+                        SELECT job_id, tenant_id, status, source, title, tags_json, filename, idempotency_key,
+                               document_id, chunk_count, indexed_chunks, error_message, created_at, updated_at
+                        FROM rag_ingestion_jobs
+                        WHERE tenant_id = %s
+                        ORDER BY updated_at DESC
+                        LIMIT %s
+                        """,
+                    ),
+                    (tenant_id, capped_limit),
+                ).fetchall()
 
         return [
             {
                 "job_id": row["job_id"],
+                "tenant_id": row["tenant_id"],
                 "status": row["status"],
                 "source": row["source"],
                 "title": row["title"],
@@ -1036,87 +1289,135 @@ class FleetRepository:
             for row in rows
         ]
 
-    def create_chat_session(self, *, session_id: str, incident_id: str | None) -> dict[str, object]:
+    def create_chat_session(
+        self,
+        *,
+        session_id: str,
+        incident_id: str | None,
+        tenant_id: str | None = None,
+    ) -> dict[str, object]:
         now = _utc_now_iso()
         with self._connect() as connection:
             connection.execute(
                 self._sql(
                     """
                     INSERT OR REPLACE INTO chat_sessions
-                    (session_id, incident_id, created_at, updated_at)
-                    VALUES (?, ?, ?, ?)
+                    (session_id, tenant_id, incident_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
                     """
                     INSERT INTO chat_sessions
-                    (session_id, incident_id, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s)
+                    (session_id, tenant_id, incident_id, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (session_id) DO UPDATE SET
+                      tenant_id = EXCLUDED.tenant_id,
                       incident_id = EXCLUDED.incident_id,
                       updated_at = EXCLUDED.updated_at
                     """,
                 ),
-                (session_id, incident_id, now, now),
+                (session_id, tenant_id, incident_id, now, now),
             )
 
         return {
             "session_id": session_id,
+            "tenant_id": tenant_id,
             "incident_id": incident_id,
             "created_at": now,
             "updated_at": now,
         }
 
-    def get_chat_session(self, session_id: str) -> dict[str, object] | None:
+    def get_chat_session(self, session_id: str, *, tenant_id: str | None = None) -> dict[str, object] | None:
         with self._connect() as connection:
-            row = connection.execute(
-                self._sql(
-                    """
-                    SELECT session_id, incident_id, created_at, updated_at
-                    FROM chat_sessions
-                    WHERE session_id = ?
-                    """,
-                    """
-                    SELECT session_id, incident_id, created_at, updated_at
-                    FROM chat_sessions
-                    WHERE session_id = %s
-                    """,
-                ),
-                (session_id,),
-            ).fetchone()
+            if tenant_id is None:
+                row = connection.execute(
+                    self._sql(
+                        """
+                        SELECT session_id, tenant_id, incident_id, created_at, updated_at
+                        FROM chat_sessions
+                        WHERE session_id = ?
+                        """,
+                        """
+                        SELECT session_id, tenant_id, incident_id, created_at, updated_at
+                        FROM chat_sessions
+                        WHERE session_id = %s
+                        """,
+                    ),
+                    (session_id,),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    self._sql(
+                        """
+                        SELECT session_id, tenant_id, incident_id, created_at, updated_at
+                        FROM chat_sessions
+                        WHERE session_id = ? AND tenant_id = ?
+                        """,
+                        """
+                        SELECT session_id, tenant_id, incident_id, created_at, updated_at
+                        FROM chat_sessions
+                        WHERE session_id = %s AND tenant_id = %s
+                        """,
+                    ),
+                    (session_id, tenant_id),
+                ).fetchone()
 
         if row is None:
             return None
 
         return {
             "session_id": row["session_id"],
+            "tenant_id": row["tenant_id"],
             "incident_id": row["incident_id"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
 
-    def list_chat_sessions(self, limit: int = 50) -> list[dict[str, object]]:
+    def list_chat_sessions(self, limit: int = 50, *, tenant_id: str | None = None) -> list[dict[str, object]]:
         capped_limit = max(1, min(limit, 200))
         with self._connect() as connection:
-            rows = connection.execute(
-                self._sql(
-                    """
-                    SELECT session_id, incident_id, created_at, updated_at
-                    FROM chat_sessions
-                    ORDER BY updated_at DESC
-                    LIMIT ?
-                    """,
-                    """
-                    SELECT session_id, incident_id, created_at, updated_at
-                    FROM chat_sessions
-                    ORDER BY updated_at DESC
-                    LIMIT %s
-                    """,
-                ),
-                (capped_limit,),
-            ).fetchall()
+            if tenant_id is None:
+                rows = connection.execute(
+                    self._sql(
+                        """
+                        SELECT session_id, tenant_id, incident_id, created_at, updated_at
+                        FROM chat_sessions
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        """
+                        SELECT session_id, tenant_id, incident_id, created_at, updated_at
+                        FROM chat_sessions
+                        ORDER BY updated_at DESC
+                        LIMIT %s
+                        """,
+                    ),
+                    (capped_limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    self._sql(
+                        """
+                        SELECT session_id, tenant_id, incident_id, created_at, updated_at
+                        FROM chat_sessions
+                        WHERE tenant_id = ?
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        """
+                        SELECT session_id, tenant_id, incident_id, created_at, updated_at
+                        FROM chat_sessions
+                        WHERE tenant_id = %s
+                        ORDER BY updated_at DESC
+                        LIMIT %s
+                        """,
+                    ),
+                    (tenant_id, capped_limit),
+                ).fetchall()
 
         return [
             {
                 "session_id": row["session_id"],
+                "tenant_id": row["tenant_id"],
                 "incident_id": row["incident_id"],
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],

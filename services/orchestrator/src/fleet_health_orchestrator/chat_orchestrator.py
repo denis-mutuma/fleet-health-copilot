@@ -108,6 +108,28 @@ class ChatToolOrchestrator:
                 if response_cost_usd is not None:
                     accumulated_cost_usd += response_cost_usd
                     llm_cost_usd = round(accumulated_cost_usd, 8)
+                max_turn_cost_usd = float(getattr(self._settings, "llm_chat_max_turn_cost_usd", 0.0) or 0.0)
+                if max_turn_cost_usd > 0 and accumulated_cost_usd > max_turn_cost_usd:
+                    final_content = (
+                        "I stopped this turn because the configured model cost budget was exceeded. "
+                        "Please narrow your request and try again."
+                    )
+                    action_status = "error"
+                    action = "cost_limit"
+                    action_payload = {
+                        "max_turn_cost_usd": round(max_turn_cost_usd, 8),
+                        "estimated_turn_cost_usd": round(accumulated_cost_usd, 8),
+                    }
+                    trace_spans.append(
+                        {
+                            "span_name": "chat.cost_guardrail",
+                            "status": "error",
+                            "latency_ms": 0.0,
+                            "metadata": action_payload,
+                            "error": "turn_cost_exceeded",
+                        }
+                    )
+                    break
                 trace_spans.append(
                     {
                         "span_name": "openai.chat.completion",

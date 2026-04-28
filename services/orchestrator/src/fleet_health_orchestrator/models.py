@@ -36,6 +36,7 @@ class TelemetryEvent(BaseModel):
 
 class IncidentReport(BaseModel):
     incident_id: str
+    tenant_id: str | None = None
     device_id: str
     status: Literal["open", "acknowledged", "resolved"]
     summary: str = Field(min_length=1)
@@ -96,6 +97,7 @@ class IncidentStatusHistoryEntry(BaseModel):
 
 class AuditEvent(BaseModel):
     event_id: str
+    tenant_id: str | None = None
     entity_type: str = Field(min_length=1)
     entity_id: str = Field(min_length=1)
     action: str = Field(min_length=1)
@@ -115,6 +117,7 @@ class AuditEvent(BaseModel):
 
 class RagDocument(BaseModel):
     document_id: str
+    tenant_id: str | None = None
     source: Literal["runbook", "incident", "manual", "note"]
     title: str = Field(min_length=1)
     content: str = Field(min_length=1)
@@ -130,6 +133,7 @@ class RagDocument(BaseModel):
 
 
 class RagIngestionRequest(BaseModel):
+    tenant_id: str | None = None
     source: Literal["runbook", "incident", "manual", "note"] = "manual"
     title: str = Field(min_length=1)
     content: str = Field(min_length=1)
@@ -149,6 +153,7 @@ class RagIngestionRequest(BaseModel):
 
 class RagIngestionResponse(BaseModel):
     document_id: str
+    tenant_id: str | None = None
     source: str
     title: str
     chunk_count: int = Field(ge=1)
@@ -161,6 +166,7 @@ class RagIngestionResponse(BaseModel):
 
 class RagDocumentFamily(BaseModel):
     document_id: str
+    tenant_id: str | None = None
     source: str
     title: str
     tags: list[str] = Field(default_factory=list)
@@ -174,6 +180,7 @@ class RagDeletionResponse(BaseModel):
 
 class RagIngestionJob(BaseModel):
     job_id: str
+    tenant_id: str | None = None
     status: Literal["pending", "running", "succeeded", "failed"]
     source: str
     title: str
@@ -202,6 +209,7 @@ class ChatSessionCreateRequest(BaseModel):
 
 class ChatSession(BaseModel):
     session_id: str
+    tenant_id: str | None = None
     incident_id: str | None = None
     created_at: datetime
     updated_at: datetime

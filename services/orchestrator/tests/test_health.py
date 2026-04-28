@@ -613,6 +613,42 @@ def test_incident_creation_records_initial_history_and_audit_event(tmp_path, mon
     assert payload["audit_events"][0]["details"]["device_id"] == "robot-03"
 
 
+def test_audit_endpoints_return_incident_audit_history(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+
+    create_response = client.post(
+        "/v1/orchestrate/event",
+        json={
+            "event_id": "evt_audit_1",
+            "fleet_id": "fleet-alpha",
+            "device_id": "robot-03",
+            "timestamp": "2026-04-24T08:00:00Z",
+            "metric": "battery_temp_c",
+            "value": 80.0,
+            "threshold": 65.0,
+            "severity": "high",
+            "tags": ["battery", "thermal"],
+        },
+    )
+    incident_id = create_response.json()["incident_id"]
+
+    patch_response = client.patch(
+        f"/v1/incidents/{incident_id}",
+        json={"status": "acknowledged", "reason": "Operator triage complete."},
+    )
+    assert patch_response.status_code == 200
+
+    incident_audit = client.get(f"/v1/incidents/{incident_id}/audit-events")
+    global_audit = client.get("/v1/audit/events", params={"entity_type": "incident", "entity_id": incident_id})
+
+    assert incident_audit.status_code == 200
+    assert global_audit.status_code == 200
+    assert len(incident_audit.json()) >= 2
+    assert incident_audit.json()[0]["entity_id"] == incident_id
+    assert incident_audit.json()[0]["tenant_id"] is None
+    assert global_audit.json()[0]["entity_id"] == incident_id
+
+
 def test_update_incident_status_returns_404_for_unknown_id(tmp_path, monkeypatch) -> None:
     client = _build_client(tmp_path, monkeypatch)
     response = client.patch(

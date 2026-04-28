@@ -324,6 +324,65 @@ def test_chat_orchestrator_surfaces_malformed_tool_arguments(monkeypatch) -> Non
     assert result.trace_spans[1]["status"] == "error"
 
 
+def test_chat_orchestrator_enforces_turn_cost_cap(monkeypatch) -> None:
+    class FakeCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="This response should be blocked by cost policy.", tool_calls=[])
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=1000, completion_tokens=1000, total_tokens=2000),
+            )
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, api_key: str):
+            assert api_key == "sk-test"
+            self.chat = FakeChat()
+
+    monkeypatch.setattr("fleet_health_orchestrator.chat_orchestrator.OpenAI", FakeOpenAI)
+
+    settings = SimpleNamespace(
+        llm_chat_enabled=True,
+        openai_api_key="sk-test",
+        llm_chat_model="gpt-4o-mini",
+        llm_chat_temperature=0.2,
+        llm_chat_max_output_tokens=400,
+        chat_tool_max_calls_per_turn=4,
+        llm_chat_input_cost_per_1k_tokens_usd=0.01,
+        llm_chat_output_cost_per_1k_tokens_usd=0.03,
+        llm_chat_max_turn_cost_usd=0.02,
+    )
+
+    adapter = MCPClientAdapter(
+        repository=_FakeRepo(),
+        retrieval_backend=_FakeRetrievalBackend(),
+        logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
+    )
+    orchestrator = ChatToolOrchestrator(
+        logger=SimpleNamespace(info=lambda *_args, **_kwargs: None),
+        settings=settings,
+        mcp_adapter=adapter,
+    )
+
+    result = orchestrator.run_turn(
+        user_content="Give me a comprehensive incident report with all details.",
+        session=SimpleNamespace(session_id="chat_1", incident_id=None),
+        chat_history=[],
+    )
+
+    assert result is not None
+    assert result.action == "cost_limit"
+    assert result.action_status == "error"
+    assert result.action_payload["max_turn_cost_usd"] == 0.02
+    assert result.action_payload["estimated_turn_cost_usd"] > 0.02
+
+
 def test_mcp_adapter_enforces_tool_timeout() -> None:
     class SlowBackend:
         def search(self, query: str, documents: list[dict[str, object]], limit: int = 5):

@@ -222,6 +222,7 @@ IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or
 - Cost telemetry:
   - `LLM_CHAT_INPUT_COST_PER_1K_TOKENS_USD`
   - `LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD`
+  - `LLM_CHAT_MAX_TURN_COST_USD` (set > 0 to enforce a per-turn cost guardrail)
   - Assistant chat messages persist `llm_cost_usd` estimated from OpenAI token usage.
 
 **RAG ingestion API**:

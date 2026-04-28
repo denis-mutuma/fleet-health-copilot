@@ -230,6 +230,16 @@ class OrchestratorSettings(BaseSettings):
             "FLEET_LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD",
         ),
     )
+    llm_chat_max_turn_cost_usd: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=50.0,
+        description="Maximum estimated USD cost allowed for a single chat turn (0 disables cap)",
+        validation_alias=AliasChoices(
+            "LLM_CHAT_MAX_TURN_COST_USD",
+            "FLEET_LLM_CHAT_MAX_TURN_COST_USD",
+        ),
+    )
 
     openai_embedding_model: str = Field(
         default="text-embedding-3-large",

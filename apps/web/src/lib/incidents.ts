@@ -122,6 +122,29 @@ function buildCanonicalEvent(): TelemetryEvent {
   };
 }
 
+export async function listIncidentAuditEvents(
+  incidentId: string
+): Promise<IncidentAuditEvent[]> {
+  return orchestratorRequest<IncidentAuditEvent[]>(
+    `/v1/incidents/${encodeURIComponent(incidentId)}/audit-events`
+  );
+}
+
+export async function listAuditEvents(opts?: {
+  entityType?: string;
+  entityId?: string;
+  limit?: number;
+}): Promise<IncidentAuditEvent[]> {
+  const qs = new URLSearchParams();
+  if (opts?.entityType) qs.set("entity_type", opts.entityType);
+  if (opts?.entityId) qs.set("entity_id", opts.entityId);
+  if (opts?.limit) qs.set("limit", String(opts.limit));
+  const query = qs.toString();
+  return orchestratorRequest<IncidentAuditEvent[]>(
+    `/v1/audit/events${query ? `?${query}` : ""}`
+  );
+}
+
 export async function orchestrateCanonicalEvent(
   identity?: RequestIdentityHeaders
 ): Promise<IncidentReport> {

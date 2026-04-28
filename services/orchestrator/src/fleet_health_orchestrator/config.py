@@ -331,6 +331,21 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("AUTH_MUTATION_ROLES", "FLEET_AUTH_MUTATION_ROLES"),
     )
 
+    # === Audit Retention ===
+    audit_retention_sweep_interval_seconds: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "How often (in seconds) the background retention sweep runs. "
+            "0 disables the background sweep entirely. "
+            "Recommended production value: 86400 (once per day)."
+        ),
+        validation_alias=AliasChoices(
+            "AUDIT_RETENTION_SWEEP_INTERVAL_SECONDS",
+            "FLEET_AUDIT_RETENTION_SWEEP_INTERVAL_SECONDS",
+        ),
+    )
+
     @property
     def llm_enabled(self) -> bool:
         """Return whether OpenAI-backed LLM features are available."""

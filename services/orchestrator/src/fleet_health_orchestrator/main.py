@@ -13,6 +13,62 @@ from fleet_health_orchestrator.middleware import (
     RequestLoggingMiddleware,
 )
 
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+
+def _make_lifespan(dependencies):  # type: ignore[no-untyped-def]
+    """Return an asynccontextmanager lifespan that starts/stops background tasks."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
+        sweep_interval = dependencies.settings.audit_retention_sweep_interval_seconds
+        task: asyncio.Task | None = None
+
+        if sweep_interval > 0:
+            dependencies.logger.info(
+                "Audit retention sweep enabled (interval=%ds)", sweep_interval
+            )
+
+            async def _sweep_loop() -> None:
+                logger = logging.getLogger("fleet.retention")
+                while True:
+                    await asyncio.sleep(sweep_interval)
+                    try:
+                        result = dependencies.repository.purge_expired_audit_events()
+                        logger.info(
+                            "Audit retention sweep complete: %s",
+                            result,
+                            extra={"event": "audit_retention_sweep", **result},
+                        )
+                        dependencies.metrics.increment("audit_retention_sweeps_total")
+                        dependencies.metrics.set_gauge(
+                            "audit_events_deleted_last_sweep",
+                            result.get("audit_events_deleted", 0),
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Audit retention sweep failed: %s", exc)
+
+            task = asyncio.create_task(_sweep_loop())
+        else:
+            dependencies.logger.info(
+                "Audit retention sweep disabled (AUDIT_RETENTION_SWEEP_INTERVAL_SECONDS=0)"
+            )
+
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    return lifespan
+
 
 def create_app() -> FastAPI:
     dependencies = initialize_dependencies()
@@ -22,6 +78,7 @@ def create_app() -> FastAPI:
         version=dependencies.settings.api_version,
         docs_url="/docs",
         openapi_url="/openapi.json",
+        lifespan=_make_lifespan(dependencies),
     )
 
     app.state.dependencies = dependencies

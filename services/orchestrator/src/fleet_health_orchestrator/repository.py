@@ -3,7 +3,7 @@
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta as _timedelta, timezone
 from pathlib import Path
 from typing import Any, Generator
 from uuid import uuid4
@@ -1261,3 +1261,61 @@ class FleetRepository:
             }
             for row in rows
         ]
+
+    def purge_expired_audit_events(self, *, now: datetime | None = None) -> dict[str, int]:
+        """Delete audit events that have exceeded their configured retention period.
+
+        Reads all rows from ``audit_retention_policy`` where ``retention_days``
+        is not NULL.  For each policy, computes a cutoff timestamp
+        ``(now - retention_days days)`` and hard-deletes matching rows from
+        ``audit_events``.
+
+        A policy row with ``tenant_id IS NULL`` and ``entity_type IS NULL``
+        applies globally.  When either column is set, it scopes the delete
+        to that tenant or entity type respectively.
+
+        Returns a dict ``{"audit_events_deleted": <total>}`` summarising
+        what was removed.
+        """
+        reference = now or datetime.now(timezone.utc)
+        total_deleted = 0
+
+        with self._connect() as connection:
+            placeholder = "%s" if self._use_postgres else "?"
+
+            policy_rows = connection.execute(
+                "SELECT policy_id, tenant_id, entity_type, retention_days "
+                "FROM audit_retention_policy "
+                "WHERE retention_days IS NOT NULL"
+            ).fetchall()
+
+            for policy in policy_rows:
+                retention_days = int(policy["retention_days"])
+                if retention_days <= 0:
+                    continue
+
+                cutoff = reference - _timedelta(days=retention_days)
+                cutoff_iso = cutoff.isoformat()
+
+                conditions = [f"occurred_at < {placeholder}"]
+                params: list[object] = [cutoff_iso]
+
+                policy_tenant = policy["tenant_id"]
+                policy_entity_type = policy["entity_type"]
+
+                if policy_tenant is not None:
+                    conditions.append(f"tenant_id = {placeholder}")
+                    params.append(policy_tenant)
+                if policy_entity_type is not None:
+                    conditions.append(f"entity_type = {placeholder}")
+                    params.append(policy_entity_type)
+
+                where_clause = " AND ".join(conditions)
+                cursor = connection.execute(
+                    f"DELETE FROM audit_events WHERE {where_clause}",
+                    tuple(params),
+                )
+                deleted = cursor.rowcount if cursor.rowcount is not None else 0
+                total_deleted += deleted
+
+        return {"audit_events_deleted": total_deleted}

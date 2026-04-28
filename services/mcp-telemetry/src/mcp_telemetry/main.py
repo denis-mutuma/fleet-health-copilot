@@ -8,6 +8,49 @@ import httpx
 DEFAULT_ORCHESTRATOR_URL = "http://127.0.0.1:8000"
 
 
+def _response_error_detail(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except Exception:
+        return None
+
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+    return None
+
+
+def _request_json(
+    *,
+    operation: str,
+    request_fn: Any,
+    url: str,
+    **kwargs: Any,
+) -> httpx.Response:
+    try:
+        response = request_fn(url, **kwargs)
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(f"{operation} request to {url} timed out") from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"{operation} request to {url} failed: {exc}") from exc
+
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = _response_error_detail(response)
+        message = f"{operation} request to {url} failed with HTTP {response.status_code}"
+        if detail:
+            message = f"{message}: {detail}"
+        raise RuntimeError(message) from exc
+    return response
+
+
 def _orchestrator_base_url() -> str:
     """Resolve orchestrator base URL from env with a safe local default."""
     return os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
@@ -17,8 +60,12 @@ def query_latest_events(
     device_id: str, base_url: str = DEFAULT_ORCHESTRATOR_URL, limit: int = 20
 ) -> dict[str, Any]:
     """Return recent events for one device from the orchestrator event stream."""
-    response = httpx.get(f"{base_url.rstrip('/')}/v1/events", timeout=10.0)
-    response.raise_for_status()
+    response = _request_json(
+        operation="query_latest_events",
+        request_fn=httpx.get,
+        url=f"{base_url.rstrip('/')}/v1/events",
+        timeout=10.0,
+    )
     events = response.json()
     # MCP tool contracts are device-centric, so filter server response in-process.
     filtered = [event for event in events if event["device_id"] == device_id][:limit]

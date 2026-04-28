@@ -1,5 +1,6 @@
 import builtins
 
+import httpx
 import pytest
 
 from mcp_retrieval import main
@@ -64,3 +65,15 @@ def test_create_mcp_server_explains_missing_runtime(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="MCP runtime is not installed"):
         main.create_mcp_server()
+
+
+def test_retrieve_supporting_context_surfaces_request_error_with_operation_context(monkeypatch) -> None:
+    def fake_get(url: str, params: dict[str, object], timeout: float) -> FakeResponse:
+        _ = (params, timeout)
+        request = httpx.Request("GET", url)
+        raise httpx.RequestError("connection refused", request=request)
+
+    monkeypatch.setattr(main.httpx, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="retrieve_supporting_context request to .* failed: connection refused"):
+        main.retrieve_supporting_context(query="battery", base_url="http://orchestrator:8000/")

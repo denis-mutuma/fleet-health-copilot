@@ -1,3 +1,9 @@
+import {
+  OrchestratorRequestError,
+  orchestratorRequest,
+  toApiError as sharedToApiError
+} from "./api";
+
 export type ChatCitation = {
   document_id: string;
   source: string;
@@ -45,46 +51,6 @@ export type ChatConversation = {
   messages: ChatMessage[];
 };
 
-const DEFAULT_ORCHESTRATOR_URL = "http://127.0.0.1:8000";
-
-class OrchestratorRequestError extends Error {
-  constructor(
-    readonly status: number,
-    readonly payload: unknown
-  ) {
-    super(`Orchestrator chat request failed (${status})`);
-  }
-}
-
-function orchestratorBaseUrl(): string {
-  const configuredUrl =
-    process.env.ORCHESTRATOR_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL ??
-    DEFAULT_ORCHESTRATOR_URL;
-  return configuredUrl.replace(/\/+$/, "");
-}
-
-async function orchestratorRequest<T>(
-  path: string,
-  init?: RequestInit
-): Promise<T> {
-  const response = await fetch(`${orchestratorBaseUrl()}${path}`, {
-    ...init,
-    cache: "no-store",
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {})
-    }
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new OrchestratorRequestError(response.status, payload);
-  }
-
-  return payload as T;
-}
-
 export async function createChatSession(
   incidentId?: string
 ): Promise<ChatSession> {
@@ -120,6 +86,11 @@ export async function postChatMessage(
 }
 
 export function toApiError(error: unknown): { status: number; message: string } {
+  const shared = sharedToApiError(error);
+  if (shared.status !== 500) {
+    return shared;
+  }
+
   if (error instanceof OrchestratorRequestError) {
     const detail =
       typeof error.payload === "object" &&

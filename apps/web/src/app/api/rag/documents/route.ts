@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import { listRagDocumentFamilies } from "@/lib/rag";
+import { apiErrorPayload } from "@/lib/api";
+import { listRagDocumentFamilies, toRagApiError } from "@/lib/rag";
 
 export async function GET() {
   try {
     const documents = await listRagDocumentFamilies();
     return NextResponse.json(documents);
-  } catch {
+  } catch (error) {
+    const apiError = toRagApiError(error);
     return NextResponse.json(
-      { error: "Could not load RAG corpus." },
-      { status: 502 }
+      apiErrorPayload(apiError.message, "upstream_request_failed"),
+      { status: apiError.status }
     );
   }
 }

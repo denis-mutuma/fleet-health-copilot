@@ -1,6 +1,6 @@
 # Fleet Health Copilot
 
-A software-only **multi-agent platform** for detecting and diagnosing incidents in simulated robotics/IoT fleets. 
+A software-only **multi-agent platform** for detecting and diagnosing incidents in simulated robotics/IoT fleets.
 
 Ingests telemetry events → detects anomalies → retrieves operational context (runbooks, incident history) → generates evidence-grounded incident reports through specialized agents (Monitor → Retriever → Diagnosis → Planner → Verifier → Reporter).
 
@@ -14,6 +14,7 @@ Ingests telemetry events → detects anomalies → retrieves operational context
 ## Quick Start
 
 ### Prerequisites
+
 - **Node.js 22+** (web app)
 - **Python 3.11+** (orchestrator)
 - **Clerk test keys** (authentication)
@@ -65,6 +66,7 @@ Index the seed runbooks into the orchestrator's retrieval backend:
 ### 5. Simulate an Incident
 
 Sign in and click **"Simulate thermal incident"** on the Operations dashboard. The system will:
+
 1. Detect the threshold breach (Monitor Agent).
 2. Retrieve relevant runbooks and incident history (Retriever Agent).
 3. Diagnose root causes (Diagnosis Agent).
@@ -77,7 +79,7 @@ Sign in and click **"Simulate thermal incident"** on the Operations dashboard. T
 The app shell exposes three sections in the left sidebar:
 
 | Section | Path | Purpose |
-|---------|------|---------|
+| ------- | ---- | ------- |
 | **Operations** | `/` | Dashboard with incident queue, status stats, and simulation control |
 | **Chat** | `/chat` | Persistent operator chat with RAG citations and action tools |
 | **Knowledge** | `/rag` | Retrieval corpus management — upload, list, and delete documents |
@@ -86,7 +88,7 @@ From an open incident, click **"Open chat for this incident"** to jump into a co
 
 ## Architecture
 
-```
+```text
 ┌─ Next.js Web App (Clerk auth)
 │  └─ /v1/* FastAPI Orchestrator
 │     ├─ Monitor Agent (anomaly detection)
@@ -124,7 +126,7 @@ Production AWS shape:
 ## Key Commands
 
 | Command | Purpose |
-|---------|---------|
+| ------- | ------- |
 | `npm run web:dev` | Start web app (port 3000) |
 | `npm run web:lint` | Lint web code |
 | `npm run web:build` | Build web for production |
@@ -140,6 +142,7 @@ Production AWS shape:
 ## Testing & Evaluation
 
 ### Unit and Integration Tests
+
 ```bash
 # Run orchestrator tests
 PYTHONPATH=services/orchestrator/src .venv/bin/pytest -q services/orchestrator/tests
@@ -149,6 +152,7 @@ npm run web:test
 ```
 
 ### End-to-End Evaluation
+
 ```bash
 # Full pipeline evaluation: precision, recall, retrieval hit rate, mean reciprocal rank, verifier pass rate, latency
 .venv/bin/python services/orchestrator/scripts/evaluate_pipeline.py
@@ -161,7 +165,6 @@ docker compose up --build
 ```
 
 Starts the orchestrator and all MCP servers in containers. Web app still runs locally.
-```
 
 Configure Clerk and the orchestrator URL:
 
@@ -190,7 +193,7 @@ IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or
 
 **Query embeddings** (`FLEET_EMBEDDING_PROVIDER`, default `hash`): `hash` (deterministic, no extra deps), `openai` (`FLEET_OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`), `http` (`FLEET_EMBEDDING_HTTP_URL` returning JSON `{"embedding":[...]}`), or `sentence_transformers` (install `pip install -e "services/orchestrator[embeddings]"` and set `FLEET_SENTENCE_TRANSFORMER_MODEL`). For production, use `openai` with `OPENAI_EMBEDDING_MODEL=text-embedding-3-large`. The embedding dimension must match the S3 Vectors index.
 
-**OpenAI LLM calls** (requires `FLEET_OPENAI_API_KEY`): incident summary refinement, diagnosis generation/enrichment, and action planning use OpenAI Responses API calls with traces, defaulting to `gpt-5.4-mini` (`LLM_REPORT_MODEL`, `LLM_DIAGNOSIS_MODEL`).
+**OpenAI LLM calls** (requires `FLEET_OPENAI_API_KEY`): incident summary refinement, diagnosis generation/enrichment, and action planning use OpenAI Responses API calls with traces, defaulting to `gpt-4o-mini` (`LLM_REPORT_MODEL`, `LLM_DIAGNOSIS_MODEL`).
 
 **OpenAI chat orchestration** (optional):
 
@@ -198,15 +201,15 @@ IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or
 - Chat model controls: `LLM_CHAT_MODEL`, `LLM_CHAT_TEMPERATURE`, `LLM_CHAT_MAX_OUTPUT_TOKENS`.
 - Tool safety controls: `CHAT_TOOL_TIMEOUT_SECONDS` (hard timeout per tool call) and `CHAT_TOOL_MAX_CALLS_PER_TURN` (turn-level cap).
 - Tool transport:
-	- `CHAT_TOOL_TRANSPORT=local` keeps in-process MCP-style tool execution.
-	- `CHAT_TOOL_TRANSPORT=http_json` uses remote HTTP JSON endpoints configured with:
-		- `CHAT_TOOL_HTTP_RETRIEVAL_BASE_URL`
-		- `CHAT_TOOL_HTTP_INCIDENTS_BASE_URL`
-		- `CHAT_TOOL_HTTP_TELEMETRY_BASE_URL`
+  - `CHAT_TOOL_TRANSPORT=local` keeps in-process MCP-style tool execution.
+  - `CHAT_TOOL_TRANSPORT=http_json` uses remote HTTP JSON endpoints configured with:
+    - `CHAT_TOOL_HTTP_RETRIEVAL_BASE_URL`
+    - `CHAT_TOOL_HTTP_INCIDENTS_BASE_URL`
+    - `CHAT_TOOL_HTTP_TELEMETRY_BASE_URL`
 - Cost telemetry:
-	- `LLM_CHAT_INPUT_COST_PER_1K_TOKENS_USD`
-	- `LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD`
-	- Assistant chat messages persist `llm_cost_usd` estimated from OpenAI token usage.
+  - `LLM_CHAT_INPUT_COST_PER_1K_TOKENS_USD`
+  - `LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD`
+  - Assistant chat messages persist `llm_cost_usd` estimated from OpenAI token usage.
 
 **RAG ingestion API**:
 

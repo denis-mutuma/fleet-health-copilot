@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorPayload, toApiError } from "@/lib/api";
 import {
   updateIncidentStatus,
   type IncidentStatus
@@ -26,7 +27,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     !INCIDENT_STATUSES.has(body.status as IncidentStatus)
   ) {
     return NextResponse.json(
-      { error: "Incident status must be open, acknowledged, or resolved." },
+      apiErrorPayload(
+        "Incident status must be open, acknowledged, or resolved.",
+        "invalid_request"
+      ),
       { status: 400 }
     );
   }
@@ -37,10 +41,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       body.status as IncidentStatus
     );
     return NextResponse.json(incident);
-  } catch {
+  } catch (error) {
+    const apiError = toApiError(error);
     return NextResponse.json(
-      { error: "Could not update incident status." },
-      { status: 502 }
+      apiErrorPayload(apiError.message, "upstream_request_failed"),
+      { status: apiError.status }
     );
   }
 }

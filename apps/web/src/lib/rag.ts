@@ -1,3 +1,10 @@
+import {
+  OrchestratorRequestError,
+  orchestratorBaseUrl,
+  orchestratorRequest,
+  readApiErrorMessage,
+} from "./api";
+
 export type RagIngestionResponse = {
   document_id: string;
   source: string;
@@ -18,16 +25,6 @@ export type RagDocumentFamily = {
   chunk_count: number;
 };
 
-const DEFAULT_ORCHESTRATOR_URL = "http://127.0.0.1:8000";
-
-function orchestratorBaseUrl(): string {
-  const configuredUrl =
-    process.env.ORCHESTRATOR_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL ??
-    DEFAULT_ORCHESTRATOR_URL;
-  return configuredUrl.replace(/\/+$/, "");
-}
-
 export async function uploadRagDocument(
   payload: FormData
 ): Promise<{ ok: true; data: RagIngestionResponse } | { ok: false; status: number; message: string }> {
@@ -45,13 +42,7 @@ export async function uploadRagDocument(
   }
 
   if (!response.ok) {
-    const message =
-      typeof responseBody === "object" &&
-      responseBody !== null &&
-      "detail" in responseBody &&
-      typeof (responseBody as { detail?: unknown }).detail === "string"
-        ? (responseBody as { detail: string }).detail
-        : "Failed to ingest document.";
+    const message = readApiErrorMessage(responseBody, "Failed to ingest document.");
 
     return {
       ok: false,
@@ -67,16 +58,7 @@ export async function uploadRagDocument(
 }
 
 export async function listRagDocumentFamilies(): Promise<RagDocumentFamily[]> {
-  const response = await fetch(`${orchestratorBaseUrl()}/v1/rag/documents`, {
-    method: "GET",
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to list RAG document families.");
-  }
-
-  return (await response.json()) as RagDocumentFamily[];
+  return orchestratorRequest<RagDocumentFamily[]>("/v1/rag/documents");
 }
 
 export async function deleteRagDocumentFamily(
@@ -98,13 +80,7 @@ export async function deleteRagDocumentFamily(
   }
 
   if (!response.ok) {
-    const message =
-      typeof responseBody === "object" &&
-      responseBody !== null &&
-      "detail" in responseBody &&
-      typeof (responseBody as { detail?: unknown }).detail === "string"
-        ? (responseBody as { detail: string }).detail
-        : "Failed to delete RAG document family.";
+    const message = readApiErrorMessage(responseBody, "Failed to delete RAG document family.");
 
     return {
       ok: false,
@@ -125,4 +101,14 @@ export async function deleteRagDocumentFamily(
     ok: true,
     deletedChunks
   };
+}
+
+export function toRagApiError(error: unknown): { status: number; message: string } {
+  if (error instanceof OrchestratorRequestError) {
+    return {
+      status: error.status,
+      message: readApiErrorMessage(error.payload, "Failed to list RAG document families."),
+    };
+  }
+  return { status: 500, message: "Unexpected RAG request failure." };
 }

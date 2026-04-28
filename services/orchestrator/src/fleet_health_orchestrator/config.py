@@ -133,12 +133,12 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("LLM_DIAGNOSIS_ENRICH_ENABLED", "FLEET_OPENAI_DIAGNOSIS_ENRICH"),
     )
     llm_report_model: str = Field(
-        default="gpt-5.4-mini",
+        default="gpt-4o-mini",
         description="OpenAI model for report refinement",
         validation_alias=AliasChoices("LLM_REPORT_MODEL", "FLEET_OPENAI_REPORT_MODEL"),
     )
     llm_diagnosis_model: str = Field(
-        default="gpt-5.4-mini",
+        default="gpt-4o-mini",
         description="OpenAI model for diagnosis enrichment",
         validation_alias=AliasChoices("LLM_DIAGNOSIS_MODEL", "FLEET_OPENAI_DIAGNOSIS_MODEL"),
     )
@@ -149,7 +149,7 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("LLM_CHAT_ENABLED", "FLEET_LLM_CHAT_ENABLED"),
     )
     llm_chat_model: str = Field(
-        default="gpt-5.4-mini",
+        default="gpt-4o-mini",
         description="OpenAI model for chat response generation",
         validation_alias=AliasChoices("LLM_CHAT_MODEL", "FLEET_LLM_CHAT_MODEL"),
     )

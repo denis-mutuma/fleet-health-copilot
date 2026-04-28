@@ -25,6 +25,12 @@ class ChatTurnResult:
     llm_cost_usd: float | None
 
 
+@dataclass
+class ParsedToolCall:
+    params: dict[str, Any]
+    error: str | None = None
+
+
 class ChatToolOrchestrator:
     def __init__(
         self,
@@ -119,16 +125,6 @@ class ChatToolOrchestrator:
 
                 message = response.choices[0].message
                 if message.tool_calls:
-                    if tool_call_count >= max_tool_calls:
-                        final_content = (
-                            "I hit the tool-execution safety limit for this turn. "
-                            "Please narrow your request and try again."
-                        )
-                        action_status = "error"
-                        action = "tool_limit"
-                        action_payload = {"max_tool_calls": max_tool_calls}
-                        break
-
                     messages.append(
                         {
                             "role": "assistant",
@@ -148,9 +144,31 @@ class ChatToolOrchestrator:
                     )
 
                     for call in message.tool_calls:
+                        if tool_call_count >= max_tool_calls:
+                            final_content = (
+                                "I hit the tool-execution safety limit for this turn. "
+                                "Please narrow your request and try again."
+                            )
+                            action_status = "error"
+                            action = "tool_limit"
+                            action_payload = {
+                                "max_tool_calls": max_tool_calls,
+                                "executed_tool_calls": tool_call_count,
+                            }
+                            break
+
                         tool_call_count += 1
-                        params = self._safe_load_json(call.function.arguments)
-                        tool_result = self._mcp_adapter.call_tool(call.function.name, params)
+                        parsed_call = self._safe_load_json(call.function.arguments)
+                        if parsed_call.error is not None:
+                            tool_result = MCPToolResult(
+                                tool_name=call.function.name,
+                                params={},
+                                output={},
+                                latency_ms=0.0,
+                                error=parsed_call.error,
+                            )
+                        else:
+                            tool_result = self._mcp_adapter.call_tool(call.function.name, parsed_call.params)
                         executed_tools.append(self._serialize_tool_result(tool_result))
                         trace_spans.append(self._tool_span(tool_result))
 
@@ -180,6 +198,9 @@ class ChatToolOrchestrator:
                             }
                         )
 
+                    if action == "tool_limit":
+                        break
+
                     continue
 
                 final_content = (message.content or "").strip()
@@ -192,11 +213,12 @@ class ChatToolOrchestrator:
 
             if citations:
                 top_docs = [c["document_id"] for c in citations[:3] if c.get("document_id")]
-                action_payload = {
+                citation_payload = {
                     "hit_count": len(citations),
                     "top_documents": top_docs,
                     "tool_calls": len(executed_tools),
                 }
+                action_payload = {**citation_payload, **action_payload}
 
             return ChatTurnResult(
                 content=final_content,
@@ -229,14 +251,14 @@ class ChatToolOrchestrator:
             "Respect slash commands when users type them, but still use tools as needed."
         )
 
-    def _safe_load_json(self, raw: str) -> dict[str, Any]:
+    def _safe_load_json(self, raw: str) -> ParsedToolCall:
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-        return {}
+                return ParsedToolCall(params=parsed)
+            return ParsedToolCall(params={}, error="Tool arguments must decode to a JSON object.")
+        except json.JSONDecodeError as exc:
+            return ParsedToolCall(params={}, error=f"Tool arguments are not valid JSON: {exc.msg}.")
 
     def _serialize_tool_result(self, tool_result: MCPToolResult) -> dict[str, Any]:
         return {

@@ -8,6 +8,49 @@ import httpx
 DEFAULT_ORCHESTRATOR_URL = "http://127.0.0.1:8000"
 
 
+def _response_error_detail(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except Exception:
+        return None
+
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+    return None
+
+
+def _request_json(
+    *,
+    operation: str,
+    request_fn: Any,
+    url: str,
+    **kwargs: Any,
+) -> httpx.Response:
+    try:
+        response = request_fn(url, **kwargs)
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(f"{operation} request to {url} timed out") from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"{operation} request to {url} failed: {exc}") from exc
+
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = _response_error_detail(response)
+        message = f"{operation} request to {url} failed with HTTP {response.status_code}"
+        if detail:
+            message = f"{message}: {detail}"
+        raise RuntimeError(message) from exc
+    return response
+
+
 def _orchestrator_base_url() -> str:
     """Resolve orchestrator base URL from env with a safe local default."""
     return os.getenv("ORCHESTRATOR_API_BASE_URL", DEFAULT_ORCHESTRATOR_URL)
@@ -17,19 +60,25 @@ def create_incident_from_event(
     event_payload: dict[str, Any], base_url: str = DEFAULT_ORCHESTRATOR_URL
 ) -> dict[str, Any]:
     """Trigger full orchestration for one telemetry event payload."""
-    response = httpx.post(
-        f"{base_url.rstrip('/')}/v1/orchestrate/event",
+    url = f"{base_url.rstrip('/')}/v1/orchestrate/event"
+    response = _request_json(
+        operation="create_incident_from_event",
+        request_fn=httpx.post,
+        url=url,
         json=event_payload,
-        timeout=10.0
+        timeout=10.0,
     )
-    response.raise_for_status()
     return response.json()
 
 
 def list_incidents(base_url: str = DEFAULT_ORCHESTRATOR_URL) -> list[dict[str, Any]]:
     """Fetch all incidents from the orchestrator."""
-    response = httpx.get(f"{base_url.rstrip('/')}/v1/incidents", timeout=10.0)
-    response.raise_for_status()
+    response = _request_json(
+        operation="list_incidents",
+        request_fn=httpx.get,
+        url=f"{base_url.rstrip('/')}/v1/incidents",
+        timeout=10.0,
+    )
     return response.json()
 
 
@@ -37,11 +86,12 @@ def get_incident(
     incident_id: str, base_url: str = DEFAULT_ORCHESTRATOR_URL
 ) -> dict[str, Any]:
     """Fetch one incident by ID from the orchestrator."""
-    response = httpx.get(
-        f"{base_url.rstrip('/')}/v1/incidents/{incident_id}",
-        timeout=10.0
+    response = _request_json(
+        operation="get_incident",
+        request_fn=httpx.get,
+        url=f"{base_url.rstrip('/')}/v1/incidents/{incident_id}",
+        timeout=10.0,
     )
-    response.raise_for_status()
     return response.json()
 
 
@@ -51,12 +101,13 @@ def update_incident_status(
     base_url: str = DEFAULT_ORCHESTRATOR_URL
 ) -> dict[str, Any]:
     """Update incident status through the orchestrator API."""
-    response = httpx.patch(
-        f"{base_url.rstrip('/')}/v1/incidents/{incident_id}",
+    response = _request_json(
+        operation="update_incident_status",
+        request_fn=httpx.patch,
+        url=f"{base_url.rstrip('/')}/v1/incidents/{incident_id}",
         json={"status": status},
-        timeout=10.0
+        timeout=10.0,
     )
-    response.raise_for_status()
     return response.json()
 
 

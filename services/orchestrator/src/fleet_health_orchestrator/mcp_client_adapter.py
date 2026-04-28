@@ -282,28 +282,38 @@ class MCPClientAdapter:
             if not query:
                 raise ValueError("query is required")
             limit = max(1, min(int(params.get("limit", 5)), 10))
-            response = httpx.get(
-                f"{self._retrieval_base_url}/v1/rag/search",
+            response = self._request_json(
+                tool_name=tool_name,
+                request_fn=httpx.get,
+                url=f"{self._retrieval_base_url}/v1/rag/search",
                 params={"query": query, "limit": limit},
                 timeout=timeout,
             )
-            response.raise_for_status()
             return {"query": query, "hits": response.json()}
 
         if tool_name == "list_incidents":
             limit = max(1, min(int(params.get("limit", 10)), 50))
-            response = httpx.get(f"{self._incidents_base_url}/v1/incidents", timeout=timeout)
-            response.raise_for_status()
+            response = self._request_json(
+                tool_name=tool_name,
+                request_fn=httpx.get,
+                url=f"{self._incidents_base_url}/v1/incidents",
+                timeout=timeout,
+            )
             return {"incidents": response.json()[:limit]}
 
         if tool_name == "read_incident":
             incident_id = str(params.get("incident_id", "")).strip()
             if not incident_id:
                 raise ValueError("incident_id is required")
-            response = httpx.get(f"{self._incidents_base_url}/v1/incidents/{incident_id}", timeout=timeout)
+            response = self._request_json(
+                tool_name=tool_name,
+                request_fn=httpx.get,
+                url=f"{self._incidents_base_url}/v1/incidents/{incident_id}",
+                timeout=timeout,
+                allow_statuses={404},
+            )
             if response.status_code == 404:
                 return {"incident": None}
-            response.raise_for_status()
             return {"incident": response.json()}
 
         if tool_name == "update_incident":
@@ -313,14 +323,16 @@ class MCPClientAdapter:
                 raise ValueError("incident_id is required")
             if status not in {"open", "acknowledged", "resolved"}:
                 raise ValueError("status must be one of open|acknowledged|resolved")
-            response = httpx.patch(
-                f"{self._incidents_base_url}/v1/incidents/{incident_id}",
+            response = self._request_json(
+                tool_name=tool_name,
+                request_fn=httpx.patch,
+                url=f"{self._incidents_base_url}/v1/incidents/{incident_id}",
                 json={"status": status},
                 timeout=timeout,
+                allow_statuses={404},
             )
             if response.status_code == 404:
                 return {"incident": None}
-            response.raise_for_status()
             return {"incident": response.json()}
 
         if tool_name == "query_device_events":
@@ -328,8 +340,12 @@ class MCPClientAdapter:
             if not device_id:
                 raise ValueError("device_id is required")
             limit = max(1, min(int(params.get("limit", 20)), 50))
-            response = httpx.get(f"{self._telemetry_base_url}/v1/events", timeout=timeout)
-            response.raise_for_status()
+            response = self._request_json(
+                tool_name=tool_name,
+                request_fn=httpx.get,
+                url=f"{self._telemetry_base_url}/v1/events",
+                timeout=timeout,
+            )
             events = [event for event in response.json() if event.get("device_id") == device_id][:limit]
             return {"device_id": device_id, "events": events}
 
@@ -337,11 +353,13 @@ class MCPClientAdapter:
             device_id = str(params.get("device_id", "")).strip()
             if not device_id:
                 raise ValueError("device_id is required")
-            events_payload = self._call_tool_http_json(
-                "query_device_events",
-                {"device_id": device_id, "limit": 1},
+            response = self._request_json(
+                tool_name=tool_name,
+                request_fn=httpx.get,
+                url=f"{self._telemetry_base_url}/v1/events",
+                timeout=timeout,
             )
-            events = events_payload.get("events", [])
+            events = [event for event in response.json() if event.get("device_id") == device_id][:1]
             latest = events[0] if events else None
             if latest is None:
                 return {
@@ -357,3 +375,50 @@ class MCPClientAdapter:
             }
 
         raise ValueError(f"Unsupported tool: {tool_name}")
+
+    def _request_json(
+        self,
+        *,
+        tool_name: str,
+        request_fn: Any,
+        url: str,
+        allow_statuses: set[int] | None = None,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        try:
+            response = request_fn(url, **kwargs)
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(f"{tool_name} request to {url} timed out") from exc
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"{tool_name} request to {url} failed: {exc}") from exc
+
+        allowed = allow_statuses or set()
+        if response.status_code in allowed:
+            return response
+
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = self._response_error_detail(response)
+            message = f"{tool_name} request to {url} failed with HTTP {response.status_code}"
+            if detail:
+                message = f"{message}: {detail}"
+            raise RuntimeError(message) from exc
+        return response
+
+    def _response_error_detail(self, response: httpx.Response) -> str | None:
+        try:
+            payload = response.json()
+        except Exception:
+            return None
+
+        if isinstance(payload, dict):
+            detail = payload.get("detail")
+            if isinstance(detail, str) and detail.strip():
+                return detail.strip()
+            error = payload.get("error")
+            if isinstance(error, dict):
+                message = error.get("message")
+                if isinstance(message, str) and message.strip():
+                    return message.strip()
+        return None

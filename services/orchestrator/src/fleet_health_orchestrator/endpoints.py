@@ -1298,10 +1298,20 @@ def create_chat_session(
     request: ChatSessionCreateRequest = Body(default=ChatSessionCreateRequest()),
     dependencies: AppDependencies = Depends(get_dependencies),
 ) -> ChatSession:
+    if request.incident_id is not None:
+        incident_id = request.incident_id.strip()
+        if not incident_id:
+            raise InvalidRequestError("incident_id must not be empty when provided.")
+        if dependencies.repository.get_incident(incident_id) is None:
+            raise ResourceNotFoundError(
+                "Incident not found.",
+                details={"incident_id": incident_id},
+            )
+
     session_id = f"chat_{uuid4().hex[:12]}"
     payload = dependencies.repository.create_chat_session(
         session_id=session_id,
-        incident_id=request.incident_id,
+        incident_id=request.incident_id.strip() if request.incident_id is not None else None,
     )
     return _to_chat_session(payload)
 

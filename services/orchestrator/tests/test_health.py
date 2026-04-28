@@ -34,6 +34,16 @@ def _load_evaluate_pipeline():
     return module
 
 
+def _load_script_module(module_name: str, file_name: str):
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / file_name
+    spec = importlib.util.spec_from_file_location(module_name, script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_lexical_retrieval_backend_ranks_and_limits_hits() -> None:
     backend = LexicalRetrievalBackend()
     documents = [
@@ -709,6 +719,18 @@ def test_chat_session_lifecycle_and_rag_citations(tmp_path, monkeypatch) -> None
     assert len(conversation["messages"][-1]["citations"]) >= 1
 
 
+def test_chat_session_rejects_missing_incident_reference(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path, monkeypatch)
+
+    response = client.post("/v1/chat/sessions", json={"incident_id": "inc_missing"})
+
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["error"]["code"] == "resource_not_found"
+    assert payload["error"]["message"] == "Incident not found."
+    assert payload["error"]["details"] == {"incident_id": "inc_missing"}
+
+
 def test_chat_actions_update_status_and_simulate(tmp_path, monkeypatch) -> None:
     client = _build_client(tmp_path, monkeypatch)
     created = client.post("/v1/chat/sessions", json={"incident_id": None})
@@ -927,3 +949,113 @@ def test_openai_embedding_provider_calls_api(monkeypatch: pytest.MonkeyPatch) ->
         openai_model="text-embedding-3-large"
     )
     assert embed("hello") == [0.25, 0.75]
+
+
+def test_http_embedding_provider_surfaces_http_detail(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fleet_health_orchestrator import embeddings as embeddings_mod
+
+    class ErrorResponse:
+        status_code = 502
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {
+                "detail": "Embedding upstream unavailable.",
+                "error": {"message": "Embedding upstream unavailable."},
+            }
+
+        def raise_for_status(self) -> None:
+            request = embeddings_mod.httpx.Request("POST", "http://embeddings.local/v1/embed")
+            raise embeddings_mod.httpx.HTTPStatusError(
+                "bad gateway",
+                request=request,
+                response=self,
+            )
+
+    def fake_post(url: str, **kwargs) -> ErrorResponse:
+        assert url == "http://embeddings.local/v1/embed"
+        assert kwargs["json"] == {"input": "hello"}
+        return ErrorResponse()
+
+    monkeypatch.setattr(embeddings_mod.httpx, "post", fake_post)
+
+    embed = embeddings_mod.create_query_embedder(
+        2,
+        provider="http",
+        http_url="http://embeddings.local/v1/embed",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"HTTP embedding request to http://embeddings\.local/v1/embed failed with HTTP 502: Embedding upstream unavailable",
+    ):
+        embed("hello")
+
+
+def test_evaluate_pipeline_surfaces_request_error_with_context(tmp_path, monkeypatch) -> None:
+    evaluate_pipeline = _load_evaluate_pipeline()
+    events_file = tmp_path / "events.jsonl"
+    events_file.write_text(
+        json.dumps({"event_id": "evt_1", "value": 80.0, "threshold": 65.0}),
+        encoding="utf-8",
+    )
+
+    def fake_post(url: str, **kwargs):
+        raise evaluate_pipeline.httpx.RequestError(
+            "connection reset",
+            request=evaluate_pipeline.httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(evaluate_pipeline.httpx, "post", fake_post)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"evaluate request to http://127\.0\.0\.1:8000/v1/orchestrate/event failed: connection reset",
+    ):
+        evaluate_pipeline.evaluate(events_file=events_file, base_url="http://127.0.0.1:8000")
+
+
+def test_replay_script_surfaces_timeout_with_context(tmp_path, monkeypatch) -> None:
+    replay_events = _load_script_module("replay_events", "replay_events.py")
+    events_file = tmp_path / "events.jsonl"
+    events_file.write_text(
+        json.dumps({"event_id": "evt_1", "value": 80.0, "threshold": 65.0}),
+        encoding="utf-8",
+    )
+
+    def fake_post(url: str, **kwargs):
+        raise replay_events.httpx.TimeoutException(
+            "timed out",
+            request=replay_events.httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(replay_events.httpx, "post", fake_post)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"replay request to http://127\.0\.0\.1:8000/v1/events timed out",
+    ):
+        replay_events.replay(events_file, "http://127.0.0.1:8000")
+
+
+def test_index_documents_script_surfaces_request_error_with_context(tmp_path, monkeypatch) -> None:
+    index_documents = _load_script_module("index_documents", "index_documents.py")
+    documents_file = tmp_path / "documents.jsonl"
+    documents_file.write_text(
+        json.dumps({"document_id": "rb_1", "title": "Runbook", "content": "content"}),
+        encoding="utf-8",
+    )
+
+    def fake_post(url: str, **kwargs):
+        raise index_documents.httpx.RequestError(
+            "connection refused",
+            request=index_documents.httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(index_documents.httpx, "post", fake_post)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"index_documents request to http://127\.0\.0\.1:8000/v1/rag/documents failed: connection refused",
+    ):
+        index_documents.index_documents(documents_file, "http://127.0.0.1:8000")

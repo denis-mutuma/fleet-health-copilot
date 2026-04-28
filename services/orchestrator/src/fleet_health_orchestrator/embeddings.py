@@ -18,6 +18,24 @@ except ImportError:  # pragma: no cover - older SDK fallback
         return nullcontext()
 
 
+def _response_error_detail(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except Exception:
+        return None
+
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+    return None
+
+
 def hash_embedding(text: str, dimension: int) -> list[float]:
     """Deterministic pseudo-embedding (SHA256 expansion). Matches prior RAG behavior."""
     if dimension <= 0:
@@ -56,13 +74,27 @@ def _openai_embedding(text: str, *, model: str, api_key: str, dimension: int) ->
 
 
 def _http_embedding(text: str, *, url: str, dimension: int) -> list[float]:
-    response = httpx.post(
-        url,
-        json={"input": text},
-        headers={"Content-Type": "application/json"},
-        timeout=60.0
-    )
-    response.raise_for_status()
+    try:
+        response = httpx.post(
+            url,
+            json={"input": text},
+            headers={"Content-Type": "application/json"},
+            timeout=60.0
+        )
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(f"HTTP embedding request to {url} timed out") from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"HTTP embedding request to {url} failed: {exc}") from exc
+
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = _response_error_detail(response)
+        message = f"HTTP embedding request to {url} failed with HTTP {response.status_code}"
+        if detail:
+            message = f"{message}: {detail}"
+        raise RuntimeError(message) from exc
+
     payload = response.json()
     vec = payload.get("embedding")
     if not isinstance(vec, list):

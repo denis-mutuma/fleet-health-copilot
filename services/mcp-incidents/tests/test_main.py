@@ -1,5 +1,6 @@
 import builtins
 
+import httpx
 import pytest
 
 from mcp_incidents import main
@@ -129,3 +130,40 @@ def test_create_mcp_server_explains_missing_runtime(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="MCP runtime is not installed"):
         main.create_mcp_server()
+
+
+def test_list_incidents_surfaces_timeout_with_operation_context(monkeypatch) -> None:
+    def fake_get(url: str, timeout: float) -> FakeResponse:
+        request = httpx.Request("GET", url)
+        raise httpx.TimeoutException("timed out", request=request)
+
+    monkeypatch.setattr(main.httpx, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="list_incidents request to .* timed out"):
+        main.list_incidents(base_url="http://orchestrator:8000/")
+
+
+def test_get_incident_surfaces_http_status_with_backend_detail(monkeypatch) -> None:
+    class ErrorResponse:
+        status_code = 404
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {
+                "detail": "Incident not found.",
+                "error": {"code": "resource_not_found", "message": "Incident not found."},
+            }
+
+        def raise_for_status(self) -> None:
+            request = httpx.Request("GET", "http://orchestrator:8000/v1/incidents/inc_missing")
+            raise httpx.HTTPStatusError("not found", request=request, response=self)
+
+    def fake_get(url: str, timeout: float) -> ErrorResponse:
+        _ = timeout
+        assert url.endswith("/inc_missing")
+        return ErrorResponse()
+
+    monkeypatch.setattr(main.httpx, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="get_incident request to .* failed with HTTP 404: Incident not found"):
+        main.get_incident(incident_id="inc_missing", base_url="http://orchestrator:8000/")

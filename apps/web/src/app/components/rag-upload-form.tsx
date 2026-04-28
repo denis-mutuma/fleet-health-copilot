@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { readApiErrorMessage } from "@/lib/api";
 
 type UploadResult = {
   document_id: string;
@@ -56,15 +57,10 @@ export default function RagUploadForm() {
       });
       const payload = (await response.json().catch(() => null)) as
         | UploadResult
-        | { error?: string }
         | null;
 
       if (!response.ok) {
-        setErrorMessage(
-          payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
-            ? payload.error
-            : "Could not ingest document."
-        );
+        setErrorMessage(readApiErrorMessage(payload, "Could not ingest document."));
         return;
       }
 

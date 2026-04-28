@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorPayload } from "@/lib/api";
 import { deleteRagDocumentFamily } from "@/lib/rag";
 
 type RouteContext = {
@@ -12,7 +13,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     const result = await deleteRagDocumentFamily(documentId);
     if (!result.ok) {
       return NextResponse.json(
-        { error: result.message },
+        apiErrorPayload(result.message, "upstream_request_failed"),
         { status: result.status }
       );
     }
@@ -20,7 +21,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ document_id: documentId, deleted_chunks: result.deletedChunks });
   } catch {
     return NextResponse.json(
-      { error: "Could not delete RAG document." },
+      apiErrorPayload("Could not delete RAG document.", "upstream_request_failed"),
       { status: 502 }
     );
   }

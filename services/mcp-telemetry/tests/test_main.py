@@ -1,5 +1,6 @@
 import builtins
 
+import httpx
 import pytest
 
 from mcp_telemetry import main
@@ -82,3 +83,29 @@ def test_create_mcp_server_explains_missing_runtime(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="MCP runtime is not installed"):
         main.create_mcp_server()
+
+
+def test_query_latest_events_surfaces_http_error_with_context(monkeypatch) -> None:
+    class ErrorResponse:
+        status_code = 503
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {
+                "detail": "Telemetry backend unavailable.",
+                "error": {"code": "service_unavailable", "message": "Telemetry backend unavailable."},
+            }
+
+        def raise_for_status(self) -> None:
+            request = httpx.Request("GET", "http://orchestrator:8000/v1/events")
+            raise httpx.HTTPStatusError("unavailable", request=request, response=self)
+
+    def fake_get(url: str, timeout: float) -> ErrorResponse:
+        _ = timeout
+        assert url.endswith("/v1/events")
+        return ErrorResponse()
+
+    monkeypatch.setattr(main.httpx, "get", fake_get)
+
+    with pytest.raises(RuntimeError, match="query_latest_events request to .* failed with HTTP 503: Telemetry backend unavailable"):
+        main.query_latest_events(device_id="robot-03", base_url="http://orchestrator:8000/")

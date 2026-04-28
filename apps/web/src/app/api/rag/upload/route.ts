@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorPayload } from "@/lib/api";
 import { uploadRagDocument } from "@/lib/rag";
 
 export async function POST(request: NextRequest) {
@@ -7,7 +8,7 @@ export async function POST(request: NextRequest) {
 
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json(
-      { error: "A non-empty document file is required." },
+      apiErrorPayload("A non-empty document file is required.", "invalid_request"),
       { status: 400 }
     );
   }
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     const result = await uploadRagDocument(outbound);
     if (!result.ok) {
       return NextResponse.json(
-        { error: result.message },
+        apiErrorPayload(result.message, "upstream_request_failed"),
         { status: result.status }
       );
     }
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result.data, { status: 201 });
   } catch {
     return NextResponse.json(
-      { error: "Could not upload and ingest document." },
+      apiErrorPayload("Could not upload and ingest document.", "upstream_request_failed"),
       { status: 502 }
     );
   }

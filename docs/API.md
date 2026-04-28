@@ -152,7 +152,7 @@ Response includes chunk/index metadata:
   "retrieval_backend": "s3vectors",
   "embedding_provider": "openai",
   "embedding_model": "text-embedding-3-large",
-  "llm_model": "gpt-5.4-mini"
+  "llm_model": "gpt-4o-mini"
 }
 ```
 

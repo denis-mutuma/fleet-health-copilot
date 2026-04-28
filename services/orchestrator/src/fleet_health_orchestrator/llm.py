@@ -187,7 +187,7 @@ def refine_incident_summary(
         explicit=model,
         primary_env="LLM_REPORT_MODEL",
         legacy_env="FLEET_OPENAI_REPORT_MODEL",
-        default="gpt-5.4-mini",
+        default="gpt-4o-mini",
     )
 
     system = SUMMARY_SYSTEM_PROMPT
@@ -253,7 +253,7 @@ def enrich_diagnosis_hypotheses(
         explicit=model,
         primary_env="LLM_DIAGNOSIS_MODEL",
         legacy_env="FLEET_OPENAI_DIAGNOSIS_MODEL",
-        default="gpt-5.4-mini",
+        default="gpt-4o-mini",
     )
 
     evidence = [{"document_id": h.document_id, "title": h.title, "source": h.source} for h in hits[:6]]
@@ -302,7 +302,7 @@ def generate_diagnosis_hypotheses(
         explicit=model,
         primary_env="LLM_DIAGNOSIS_MODEL",
         legacy_env="FLEET_OPENAI_DIAGNOSIS_MODEL",
-        default="gpt-5.4-mini",
+        default="gpt-4o-mini",
     )
     evidence = [
         {
@@ -363,7 +363,7 @@ def generate_action_plan(
         explicit=model,
         primary_env="LLM_REPORT_MODEL",
         legacy_env="FLEET_OPENAI_REPORT_MODEL",
-        default="gpt-5.4-mini",
+        default="gpt-4o-mini",
     )
     runbooks = [
         {

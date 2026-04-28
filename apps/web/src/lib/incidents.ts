@@ -1,3 +1,7 @@
+import { OrchestratorRequestError, orchestratorRequest } from "./api";
+
+export { OrchestratorRequestError };
+
 export type IncidentStatus = "open" | "acknowledged" | "resolved";
 
 export type IncidentReport = {
@@ -29,45 +33,6 @@ type TelemetryEvent = {
   severity: "low" | "medium" | "high" | "critical";
   tags: string[];
 };
-
-const DEFAULT_ORCHESTRATOR_URL = "http://127.0.0.1:8000";
-
-class OrchestratorRequestError extends Error {
-  constructor(
-    readonly status: number,
-    statusText: string
-  ) {
-    super(`Orchestrator request failed (${status}): ${statusText}`);
-  }
-}
-
-function orchestratorBaseUrl(): string {
-  const configuredUrl =
-    process.env.ORCHESTRATOR_API_BASE_URL ??
-    process.env.NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL ??
-    DEFAULT_ORCHESTRATOR_URL;
-  return configuredUrl.replace(/\/+$/, "");
-}
-
-async function orchestratorRequest<T>(
-  path: string,
-  init?: RequestInit
-): Promise<T> {
-  const response = await fetch(`${orchestratorBaseUrl()}${path}`, {
-    ...init,
-    cache: "no-store",
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {})
-    }
-  });
-
-  if (!response.ok) {
-    throw new OrchestratorRequestError(response.status, response.statusText);
-  }
-
-  return (await response.json()) as T;
-}
 
 export async function listIncidents(): Promise<IncidentReport[]> {
   return orchestratorRequest<IncidentReport[]>("/v1/incidents");
@@ -102,9 +67,8 @@ export async function updateIncidentStatus(
 }
 
 function buildCanonicalEvent(): TelemetryEvent {
-  const suffix = `${Date.now()}`;
   return {
-    event_id: `evt_${suffix}`,
+    event_id: `evt_${Date.now()}`,
     fleet_id: "fleet-alpha",
     device_id: "robot-03",
     timestamp: new Date().toISOString(),

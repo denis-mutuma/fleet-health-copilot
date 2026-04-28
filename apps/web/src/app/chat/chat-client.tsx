@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { readApiErrorMessage } from "@/lib/api";
 import type { ChatConversation, ChatMessage, ChatSession } from "@/lib/chat";
-
-type ApiErrorResponse = { error?: string };
 
 interface IncidentItem {
   incident_id: string;
@@ -46,15 +45,9 @@ async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {})
     }
   });
-  const payload = (await response.json().catch(() => null)) as T | ApiErrorResponse | null;
+  const payload = (await response.json().catch(() => null)) as T | null;
   if (!response.ok) {
-    const message =
-      payload &&
-      typeof payload === "object" &&
-      "error" in payload &&
-      typeof payload.error === "string"
-        ? payload.error
-        : "Request failed.";
+    const message = readApiErrorMessage(payload, "Request failed.");
     throw new Error(message);
   }
   return payload as T;

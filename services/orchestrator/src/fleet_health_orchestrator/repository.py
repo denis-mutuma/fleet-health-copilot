@@ -5,6 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Generator
 
 from fleet_health_orchestrator.models import IncidentReport, TelemetryEvent
 
@@ -26,7 +27,7 @@ class FleetRepository:
         self._init_db()
 
     @contextmanager
-    def _connect(self):
+    def _connect(self) -> Generator[Any, None, None]:
         """Yield a DB connection and handle commit/rollback consistently."""
         if self._use_postgres:
             import psycopg

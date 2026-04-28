@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorPayload } from "@/lib/api";
 import { postChatMessage, toApiError } from "@/lib/chat";
 
 type RouteContext = {
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   if (!body || typeof body.content !== "string" || !body.content.trim()) {
     return NextResponse.json(
-      { error: "content must be a non-empty string." },
+      apiErrorPayload("content must be a non-empty string.", "invalid_request"),
       { status: 400 }
     );
   }
@@ -23,6 +24,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json(conversation);
   } catch (error) {
     const apiError = toApiError(error);
-    return NextResponse.json({ error: apiError.message }, { status: apiError.status });
+    return NextResponse.json(
+      apiErrorPayload(apiError.message, "upstream_request_failed"),
+      { status: apiError.status }
+    );
   }
 }

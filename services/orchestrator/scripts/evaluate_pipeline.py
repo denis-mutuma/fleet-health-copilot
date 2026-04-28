@@ -6,6 +6,23 @@ from time import perf_counter
 import httpx
 
 
+def _post_event_request(
+    *,
+    operation: str,
+    url: str,
+    event: dict[str, object],
+    client: httpx.Client | None,
+) -> httpx.Response:
+    try:
+        if client is None:
+            return httpx.post(url, json=event, timeout=10.0)
+        return client.post(url, json=event)
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(f"{operation} request to {url} timed out") from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"{operation} request to {url} failed: {exc}") from exc
+
+
 def _expected_runbook(event: dict[str, object]) -> str | None:
     # This maps event signals to the canonical detailed runbook IDs used for retrieval quality checks.
     tags = set(event.get("tags", []))
@@ -67,9 +84,12 @@ def evaluate(
 
     def _post_event(event: dict[str, object]) -> httpx.Response:
         target = f"{url_base}/v1/orchestrate/event"
-        if client is None:
-            return httpx.post(target, json=event, timeout=10.0)
-        return client.post(target, json=event)
+        return _post_event_request(
+            operation="evaluate",
+            url=target,
+            event=event,
+            client=client,
+        )
 
     total = 0
     expected_anomalies = 0

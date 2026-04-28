@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorPayload } from "@/lib/api";
 import { createChatSession, listChatSessions, toApiError } from "@/lib/chat";
 
 export async function GET() {
@@ -7,7 +8,10 @@ export async function GET() {
     return NextResponse.json(sessions);
   } catch (error) {
     const apiError = toApiError(error);
-    return NextResponse.json({ error: apiError.message }, { status: apiError.status });
+    return NextResponse.json(
+      apiErrorPayload(apiError.message, "upstream_request_failed"),
+      { status: apiError.status }
+    );
   }
 }
 
@@ -23,7 +27,7 @@ export async function POST(request: NextRequest) {
     typeof body.incident_id !== "string"
   ) {
     return NextResponse.json(
-      { error: "incident_id must be a string when provided." },
+      apiErrorPayload("incident_id must be a string when provided.", "invalid_request"),
       { status: 400 }
     );
   }
@@ -37,6 +41,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(session, { status: 201 });
   } catch (error) {
     const apiError = toApiError(error);
-    return NextResponse.json({ error: apiError.message }, { status: apiError.status });
+    return NextResponse.json(
+      apiErrorPayload(apiError.message, "upstream_request_failed"),
+      { status: apiError.status }
+    );
   }
 }

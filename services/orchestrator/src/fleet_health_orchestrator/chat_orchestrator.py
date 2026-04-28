@@ -44,7 +44,14 @@ class ChatToolOrchestrator:
         self._mcp_adapter = mcp_adapter
 
     def can_use_llm(self) -> bool:
-        return bool(self._settings.llm_chat_enabled and self._settings.openai_api_key.strip())
+        chat_enabled = bool(
+            getattr(
+                self._settings,
+                "effective_llm_chat_enabled",
+                getattr(self._settings, "llm_chat_enabled", False),
+            )
+        )
+        return bool(chat_enabled and self._settings.openai_api_key.strip())
 
     def run_turn(
         self,

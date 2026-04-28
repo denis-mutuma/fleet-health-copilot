@@ -1573,13 +1573,23 @@ def post_chat_message(
     trace_spans: list[dict[str, object]] = []
     llm_cost_usd: float | None = None
 
+    normalized_content = message.content.strip().lower()
+    is_slash_command = normalized_content.startswith("/")
+
     should_use_llm_chat = (
-        dependencies.settings.llm_chat_enabled
+        dependencies.settings.effective_llm_chat_enabled
         and dependencies.chat_orchestrator is not None
-        and not message.content.strip().lower().startswith("/simulate")
-        and not message.content.strip().lower().startswith("/checklist")
-        and not message.content.strip().lower().startswith("report incident")
+        and not is_slash_command
+        and not normalized_content.startswith("report incident")
     )
+
+    if not should_use_llm_chat:
+        dependencies.logger.debug(
+            "LLM chat disabled for message: session=%s enabled=%s has_orchestrator=%s",
+            clean_session_id,
+            dependencies.settings.effective_llm_chat_enabled,
+            dependencies.chat_orchestrator is not None,
+        )
 
     if should_use_llm_chat:
         try:

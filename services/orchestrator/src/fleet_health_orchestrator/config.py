@@ -369,6 +369,11 @@ class OrchestratorSettings(BaseSettings):
         """Auto-enable diagnosis enrichment when OpenAI is configured."""
         return self.llm_diagnosis_enrich_enabled or self.llm_enabled
 
+    @property
+    def effective_llm_chat_enabled(self) -> bool:
+        """Auto-enable chat LLM mode when OpenAI is configured."""
+        return self.llm_chat_enabled or self.llm_enabled
+
     def __str__(self) -> str:
         """Return configuration summary for logging (excluding secrets)."""
         return (

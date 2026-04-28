@@ -149,7 +149,7 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("LLM_CHAT_ENABLED", "FLEET_LLM_CHAT_ENABLED"),
     )
     llm_chat_model: str = Field(
-        default="gpt-4o-mini",
+        default="gpt-5.4-mini",
         description="OpenAI model for chat response generation",
         validation_alias=AliasChoices("LLM_CHAT_MODEL", "FLEET_LLM_CHAT_MODEL"),
     )

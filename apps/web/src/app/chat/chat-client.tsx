@@ -562,7 +562,7 @@ export default function ChatClient() {
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendPrompt(prompt).catch(() => null);
     }
@@ -718,7 +718,7 @@ export default function ChatClient() {
               rows={3}
               placeholder={
                 activeSessionId
-                  ? "Ask a question, report incident, or run /simulate… (Ctrl+Enter to send)"
+                  ? "Ask a question, report incident, or run /simulate... (Enter to send, Shift+Enter for newline)"
                   : "Create a session to begin"
               }
               disabled={loading || !activeSessionId}

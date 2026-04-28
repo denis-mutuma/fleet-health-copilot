@@ -78,11 +78,11 @@ What runbooks apply to battery thermal drift?
 
 Expected: assistant response includes citations grouped by source.
 
-2. List incidents and open one:
+2. Ask for incident summaries and details:
 
 ```text
-/list incidents
-/open <incident_id>
+Summarize active incidents and identify the top operational risk.
+Summarize incident <incident_id> with status, likely causes, and next actions.
 ```
 
 Expected: incident list card, then incident details summary with hypotheses/actions.
@@ -90,7 +90,7 @@ Expected: incident list card, then incident details summary with hypotheses/acti
 3. Generate an action checklist:
 
 ```text
-/checklist <incident_id>
+Draft an operator checklist for incident <incident_id>.
 ```
 
 Expected: checklist card with actionable steps.
@@ -98,7 +98,7 @@ Expected: checklist card with actionable steps.
 4. Update incident state:
 
 ```text
-/status <incident_id> acknowledged
+Recommend whether incident <incident_id> should move to acknowledged and explain why.
 ```
 
 Expected: status update confirmation card.
@@ -106,15 +106,15 @@ Expected: status update confirmation card.
 5. Report a new incident from chat:
 
 ```text
-report incident metric=battery_temp_c device=robot-03 value=74.2 threshold=65
+Draft an incident report for a battery_temp_c threshold breach on robot-03 (value 74.2, threshold 65).
 ```
 
 Expected: new incident creation confirmation with link to details.
 
-6. Trigger simulation from chat:
+6. Generate simulation guidance from chat:
 
 ```text
-/simulate
+Walk through a simulated high-severity thermal incident and provide operator actions.
 ```
 
 Expected: simulated incident created and returned as action payload.

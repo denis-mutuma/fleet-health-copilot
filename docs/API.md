@@ -258,14 +258,8 @@ Chat execution behavior is controlled by environment settings:
 - `CHAT_TOOL_HTTP_RETRIEVAL_BASE_URL`, `CHAT_TOOL_HTTP_INCIDENTS_BASE_URL`, `CHAT_TOOL_HTTP_TELEMETRY_BASE_URL` configure HTTP JSON transport endpoints
 - `LLM_CHAT_INPUT_COST_PER_1K_TOKENS_USD`, `LLM_CHAT_OUTPUT_COST_PER_1K_TOKENS_USD` configure cost estimation rates
 
-Supported command patterns in message content:
-
-- `report incident metric=<metric> device=<device_id> value=<n> threshold=<n>`
-- `/list incidents`
-- `/open <incident_id>`
-- `/status <incident_id> <open|acknowledged|resolved>`
-- `/checklist [incident_id]`
-- `/simulate`
+Chat messages are processed by the LLM chat orchestrator with tool-calling.
+Use natural language prompts for incident triage, summaries, and operational guidance.
 
 ## Orchestration
 

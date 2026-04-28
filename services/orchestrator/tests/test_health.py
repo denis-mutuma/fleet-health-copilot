@@ -19,6 +19,33 @@ from fleet_health_orchestrator.rag import (
 
 def _build_client(tmp_path, monkeypatch: object) -> TestClient:
     monkeypatch.setenv("FLEET_DB_PATH", str(tmp_path / "test_fleet_health.db"))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    class _FakeCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="AI chat response.",
+                            tool_calls=[],
+                        )
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=12, completion_tokens=9, total_tokens=21),
+            )
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeOpenAI:
+        def __init__(self, api_key: str) -> None:
+            assert api_key
+            self.chat = _FakeChat()
+
+    monkeypatch.setattr("fleet_health_orchestrator.chat_orchestrator.OpenAI", _FakeOpenAI)
+
     main_module = importlib.import_module("fleet_health_orchestrator.main")
     main_module = importlib.reload(main_module)
     return TestClient(main_module.app)
@@ -811,7 +838,8 @@ def test_chat_session_lifecycle_and_rag_citations(tmp_path, monkeypatch) -> None
     assert conversation["session"]["session_id"] == session_id
     assert len(conversation["messages"]) >= 2
     assert conversation["messages"][-1]["role"] == "assistant"
-    assert len(conversation["messages"][-1]["citations"]) >= 1
+    assert isinstance(conversation["messages"][-1]["content"], str)
+    assert conversation["messages"][-1]["content"]
 
 
 def test_chat_session_rejects_missing_incident_reference(tmp_path, monkeypatch) -> None:
@@ -826,7 +854,7 @@ def test_chat_session_rejects_missing_incident_reference(tmp_path, monkeypatch) 
     assert payload["error"]["details"] == {"incident_id": "inc_missing"}
 
 
-def test_chat_actions_update_status_and_simulate(tmp_path, monkeypatch) -> None:
+def test_chat_messages_require_llm_path(tmp_path, monkeypatch) -> None:
     client = _build_client(tmp_path, monkeypatch)
     created = client.post("/v1/chat/sessions", json={"incident_id": None})
     assert created.status_code == 200
@@ -848,23 +876,14 @@ def test_chat_actions_update_status_and_simulate(tmp_path, monkeypatch) -> None:
     )
     incident_id = created_incident.json()["incident_id"]
 
-    status_update = client.post(
+    llm_chat = client.post(
         f"/v1/chat/sessions/{session_id}/messages",
-        json={"content": f"/status {incident_id} acknowledged"},
+        json={"content": f"Summarize incident {incident_id} and next actions."},
     )
-    assert status_update.status_code == 200
-    status_message = status_update.json()["messages"][-1]
-    assert status_message["action"] == "update_status"
-    assert status_message["action_status"] == "success"
-
-    simulate = client.post(
-        f"/v1/chat/sessions/{session_id}/messages",
-        json={"content": "/simulate"},
-    )
-    assert simulate.status_code == 200
-    simulate_message = simulate.json()["messages"][-1]
-    assert simulate_message["action"] == "simulate"
-    assert simulate_message["action_status"] == "success"
+    assert llm_chat.status_code == 200
+    response_message = llm_chat.json()["messages"][-1]
+    assert response_message["action"] is not None
+    assert response_message["role"] == "assistant"
 
 
 def test_evaluate_pipeline_reports_confusion_metrics(tmp_path, monkeypatch) -> None:

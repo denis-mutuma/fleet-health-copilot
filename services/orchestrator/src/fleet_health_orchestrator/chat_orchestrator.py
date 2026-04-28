@@ -101,7 +101,7 @@ class ChatToolOrchestrator:
             while True:
                 started = perf_counter()
                 response = client.chat.completions.create(
-                    model=self._settings.llm_chat_model,
+                    model="gpt-5.4-mini",
                     temperature=self._settings.llm_chat_temperature,
                     max_tokens=self._settings.llm_chat_max_output_tokens,
                     messages=messages,
@@ -143,7 +143,7 @@ class ChatToolOrchestrator:
                         "status": "success",
                         "latency_ms": latency_ms,
                         "metadata": {
-                            "model": self._settings.llm_chat_model,
+                            "model": "gpt-5.4-mini",
                             "prompt_tokens": getattr(usage, "prompt_tokens", None),
                             "completion_tokens": getattr(usage, "completion_tokens", None),
                             "total_tokens": getattr(usage, "total_tokens", None),

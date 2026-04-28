@@ -20,20 +20,29 @@ type TraceSpan = NonNullable<ChatMessage["trace_spans"]>[number];
 const TOOL_PAYLOAD_PREVIEW_MAX_CHARS = 1200;
 
 const QUICK_ACTIONS = [
-  { label: "List incidents", prompt: "/list incidents" },
-  { label: "Run simulation", prompt: "/simulate" },
-  { label: "Checklist", prompt: "/checklist" },
   {
-    label: "Report incident",
-    prompt: "report incident metric=battery_temp_c device=robot-03 value=74.2 threshold=65"
+    label: "Summarize active incidents",
+    prompt: "Summarize active incidents and prioritize what we should work on first."
+  },
+  {
+    label: "Investigate battery thermal drift",
+    prompt: "Investigate battery thermal drift patterns and recommended next actions."
+  },
+  {
+    label: "Draft an operator checklist",
+    prompt: "Draft a concise operator checklist for triaging a high-severity device alert."
+  },
+  {
+    label: "Incident report draft",
+    prompt: "Draft a structured incident report for a battery_temp_c threshold breach on robot-03."
   }
 ];
 
 const EMPTY_STATE_SUGGESTIONS = [
   "What causes battery thermal drift?",
-  "/list incidents",
-  "/simulate",
-  "report incident metric=battery_temp_c device=robot-03 value=74.2 threshold=65"
+  "Summarize active incidents and top risks.",
+  "Draft an incident response checklist for motor_current_a spikes.",
+  "What evidence supports the current diagnosis for the active incident?"
 ];
 
 async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
@@ -569,7 +578,7 @@ export default function ChatClient() {
   }
 
   function handleOpenIncident(incidentId: string) {
-    setPrompt(`/open ${incidentId}`);
+    setPrompt(`Summarize incident ${incidentId} with status, likely causes, and next actions.`);
   }
 
   const activeSession = sessions.find((s) => s.session_id === activeSessionId);
@@ -604,7 +613,7 @@ export default function ChatClient() {
           </div>
           <div className="context-item">
             <span className="context-title">Shortcuts</span>
-            <span className="context-value">/list, /open, /status, /checklist, /simulate</span>
+            <span className="context-value">Use natural language prompts for all actions</span>
           </div>
         </div>
         <div className="actions action-group">
@@ -718,7 +727,7 @@ export default function ChatClient() {
               rows={3}
               placeholder={
                 activeSessionId
-                  ? "Ask a question, report incident, or run /simulate... (Enter to send, Shift+Enter for newline)"
+                  ? "Ask anything about incidents, evidence, or next actions (Enter to send, Shift+Enter for newline)"
                   : "Create a session to begin"
               }
               disabled={loading || !activeSessionId}

@@ -12,18 +12,13 @@
 ### Chat Capabilities
 
 - Ask RAG questions and receive citation-backed answers.
-- Report incidents from chat using structured natural language:
+- Draft incident reports from chat using structured natural language:
 
 ```text
-report incident metric=battery_temp_c device=robot-03 value=74.2 threshold=65
+Draft an incident report for battery_temp_c threshold breach on robot-03.
 ```
 
-- Run operational commands:
-  - `/list incidents`
-  - `/open <incident_id>`
-  - `/status <incident_id> <open|acknowledged|resolved>`
-  - `/checklist [incident_id]`
-  - `/simulate`
+- Use natural-language prompts for operational workflows (incident summaries, checklists, and action planning).
 
 ### API Additions
 

@@ -1,12 +1,13 @@
 environment = "prod"
 aws_region  = "us-east-1"
 
-enable_ecs              = true
-enable_orchestrator_efs = true
-enable_postgres         = true
-enable_api_gateway      = true
+enable_ecs              = false
+enable_single_instance  = true
+enable_orchestrator_efs = false
+enable_postgres         = false
+enable_api_gateway      = false
 enable_cloudfront       = true
-enable_waf              = true
+enable_waf              = false
 enable_s3_vectors_rag   = false
 
 # Optional: set private subnets for PostgreSQL, internal ALB, and API Gateway VPC Link.

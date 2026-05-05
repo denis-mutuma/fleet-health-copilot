@@ -77,7 +77,7 @@ locals {
 }
 
 data "aws_vpc" "selected" {
-  count = var.enable_ecs ? 1 : 0
+  count = (var.enable_ecs || var.enable_single_instance) ? 1 : 0
 
   id = var.vpc_id
 }

@@ -32,8 +32,8 @@ variable "container_repositories" {
   default     = ["web", "orchestrator"]
 
   validation {
-    condition     = !var.enable_ecs || (contains(var.container_repositories, "web") && contains(var.container_repositories, "orchestrator"))
-    error_message = "container_repositories must include web and orchestrator when enable_ecs is true."
+    condition     = !(var.enable_ecs || var.enable_single_instance) || (contains(var.container_repositories, "web") && contains(var.container_repositories, "orchestrator"))
+    error_message = "container_repositories must include web and orchestrator when enable_ecs or enable_single_instance is true."
   }
 }
 
@@ -73,25 +73,36 @@ variable "enable_ecs" {
   default     = false
 }
 
+variable "enable_single_instance" {
+  type        = bool
+  description = "Whether to create a low-cost single EC2 runtime that runs web and orchestrator containers with Docker Compose."
+  default     = false
+
+  validation {
+    condition     = !(var.enable_single_instance && var.enable_ecs)
+    error_message = "enable_single_instance and enable_ecs are mutually exclusive runtime modes."
+  }
+}
+
 variable "vpc_id" {
   type        = string
-  description = "VPC ID for ECS and load balancer resources. Required when enable_ecs is true."
+  description = "VPC ID for runtime resources. Required when enable_ecs or enable_single_instance is true."
   default     = ""
 
   validation {
-    condition     = !var.enable_ecs || var.vpc_id != ""
-    error_message = "vpc_id must be provided when enable_ecs is true."
+    condition     = !(var.enable_ecs || var.enable_single_instance) || var.vpc_id != ""
+    error_message = "vpc_id must be provided when enable_ecs or enable_single_instance is true."
   }
 }
 
 variable "public_subnet_ids" {
   type        = list(string)
-  description = "Public subnet IDs for the load balancer and Fargate services. At least two are recommended when enable_ecs is true."
+  description = "Public subnet IDs for runtime resources. ECS needs at least two; single-instance needs at least one."
   default     = []
 
   validation {
-    condition     = !var.enable_ecs || length(var.public_subnet_ids) >= 2
-    error_message = "At least two public_subnet_ids must be provided when enable_ecs is true."
+    condition     = (!var.enable_ecs || length(var.public_subnet_ids) >= 2) && (!var.enable_single_instance || length(var.public_subnet_ids) >= 1)
+    error_message = "At least two public_subnet_ids are required for enable_ecs; at least one is required for enable_single_instance."
   }
 }
 
@@ -181,13 +192,25 @@ variable "enable_api_gateway" {
 
 variable "enable_cloudfront" {
   type        = bool
-  description = "Whether to place CloudFront in front of the public web ALB."
+  description = "Whether to place CloudFront in front of the public web origin."
   default     = false
 
   validation {
-    condition     = !var.enable_cloudfront || var.enable_ecs
-    error_message = "enable_cloudfront requires enable_ecs."
+    condition     = !var.enable_cloudfront || var.enable_ecs || var.enable_single_instance
+    error_message = "enable_cloudfront requires enable_ecs or enable_single_instance."
   }
+}
+
+variable "single_instance_type" {
+  type        = string
+  description = "EC2 instance type for the low-cost single-instance runtime."
+  default     = "t3a.small"
+}
+
+variable "single_instance_volume_size" {
+  type        = number
+  description = "Persistent EBS data volume size in GiB for the single-instance SQLite data directory."
+  default     = 20
 }
 
 variable "enable_waf" {

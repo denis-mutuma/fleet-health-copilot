@@ -124,6 +124,15 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
   name  = "Managed-AllViewer"
 }
 
+locals {
+  cloudfront_web_origin_id = var.enable_single_instance ? "web-single-instance" : "web-alb"
+  cloudfront_web_origin_domain_name = (
+    var.enable_single_instance
+    ? aws_eip.single_instance[0].public_dns
+    : aws_lb.web[0].dns_name
+  )
+}
+
 resource "aws_wafv2_web_acl" "cloudfront" {
   count = var.enable_waf ? 1 : 0
 
@@ -206,8 +215,8 @@ resource "aws_cloudfront_distribution" "web" {
   web_acl_id          = var.enable_waf ? aws_wafv2_web_acl.cloudfront[0].arn : null
 
   origin {
-    domain_name = aws_lb.web[0].dns_name
-    origin_id   = "web-alb"
+    domain_name = local.cloudfront_web_origin_domain_name
+    origin_id   = local.cloudfront_web_origin_id
 
     custom_origin_config {
       http_port              = 80
@@ -218,7 +227,7 @@ resource "aws_cloudfront_distribution" "web" {
   }
 
   default_cache_behavior {
-    target_origin_id         = "web-alb"
+    target_origin_id         = local.cloudfront_web_origin_id
     viewer_protocol_policy   = "redirect-to-https"
     allowed_methods          = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods           = ["GET", "HEAD", "OPTIONS"]
@@ -229,7 +238,7 @@ resource "aws_cloudfront_distribution" "web" {
 
   ordered_cache_behavior {
     path_pattern             = "/_next/static/*"
-    target_origin_id         = "web-alb"
+    target_origin_id         = local.cloudfront_web_origin_id
     viewer_protocol_policy   = "redirect-to-https"
     allowed_methods          = ["GET", "HEAD", "OPTIONS"]
     cached_methods           = ["GET", "HEAD", "OPTIONS"]
@@ -247,6 +256,10 @@ resource "aws_cloudfront_distribution" "web" {
   viewer_certificate {
     cloudfront_default_certificate = true
   }
+
+  depends_on = [
+    aws_eip_association.single_instance
+  ]
 
   tags = local.common_tags
 }

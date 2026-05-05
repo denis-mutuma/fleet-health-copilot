@@ -76,7 +76,51 @@ jobs:
       - name: Terraform validate
         run: terraform -chdir=infra/terraform validate -no-color
 
+      - name: Prepare removable PostgreSQL database
+        run: |
+          set -euo pipefail
+          if ! grep -Eq '^[[:space:]]*enable_single_instance[[:space:]]*=[[:space:]]*true' "infra/terraform/env/${TF_ENV}.tfvars"; then
+            echo "Single-instance mode is not enabled; skipping PostgreSQL decommission preparation."
+            exit 0
+          fi
+
+          db_identifier="fleet-health-copilot-${TF_ENV}-postgres"
+          db_status=$(aws rds describe-db-instances \
+            --db-instance-identifier "${db_identifier}" \
+            --query 'DBInstances[0].DBInstanceStatus' \
+            --output text 2>/dev/null || true)
+          if [ -z "${db_status}" ] || [ "${db_status}" = "None" ]; then
+            echo "No existing PostgreSQL DB found for ${db_identifier}; skipping deletion protection update."
+            exit 0
+          fi
+
+          protection=$(aws rds describe-db-instances \
+            --db-instance-identifier "${db_identifier}" \
+            --query 'DBInstances[0].DeletionProtection' \
+            --output text)
+          if [ "${protection}" != "True" ]; then
+            echo "Deletion protection already disabled for ${db_identifier}."
+            exit 0
+          fi
+
+          aws rds modify-db-instance \
+            --db-instance-identifier "${db_identifier}" \
+            --no-deletion-protection \
+            --apply-immediately >/dev/null
+          aws rds wait db-instance-available --db-instance-identifier "${db_identifier}"
+
+      - name: Resolve desired runtime mode
+        id: desired-runtime
+        run: |
+          set -euo pipefail
+          if grep -Eq '^[[:space:]]*enable_single_instance[[:space:]]*=[[:space:]]*true' "infra/terraform/env/${TF_ENV}.tfvars"; then
+            echo "mode=single-instance" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=ecs" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Terraform apply (bootstrap latest tags)
+        if: steps.desired-runtime.outputs.mode == 'ecs'
         env:
           TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
           TF_VAR_public_subnet_ids: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
@@ -87,6 +131,31 @@ jobs:
             -var="github_repository=${{ github.repository }}" \
             -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
             -var='container_image_tags={web="latest",orchestrator="latest"}'
+
+      - name: Terraform apply (bootstrap single instance)
+        if: steps.desired-runtime.outputs.mode == 'single-instance'
+        env:
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
+          TF_VAR_public_subnet_ids: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
+        run: |
+          set -euo pipefail
+          terraform -chdir=infra/terraform apply -auto-approve -input=false \
+            -var-file="env/${TF_ENV}.tfvars" \
+            -var="github_repository=${{ github.repository }}" \
+            -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
+            -var='container_image_tags={web="latest",orchestrator="latest"}' \
+            -target=aws_ecr_repository.service \
+            -target=aws_ecr_lifecycle_policy.service \
+            -target=aws_secretsmanager_secret.managed \
+            -target=aws_iam_role.single_instance \
+            -target=aws_iam_role_policy_attachment.single_instance_ssm \
+            -target=aws_iam_role_policy.single_instance_runtime \
+            -target=aws_iam_role_policy.single_instance_secret_access \
+            -target=aws_iam_instance_profile.single_instance \
+            -target=aws_security_group.single_instance \
+            -target=aws_eip.single_instance \
+            -target=aws_instance.single_instance \
+            -target=aws_eip_association.single_instance
 
       - name: Ensure Clerk runtime secret value is set
         env:
@@ -157,6 +226,168 @@ jobs:
             ${{ steps.ecr.outputs.orchestrator }}:${{ github.sha }}
             ${{ steps.ecr.outputs.orchestrator }}:latest
 
+      - name: Resolve runtime mode
+        id: runtime
+        run: |
+          set -euo pipefail
+          single_instance_id=$(terraform -chdir=infra/terraform output -raw single_instance_id 2>/dev/null || true)
+          if [ -n "${single_instance_id}" ] && [ "${single_instance_id}" != "null" ]; then
+            echo "mode=single-instance" >> "$GITHUB_OUTPUT"
+            echo "single_instance_id=${single_instance_id}" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=ecs" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy single-instance runtime with SSM
+        if: steps.runtime.outputs.mode == 'single-instance'
+        env:
+          INSTANCE_ID: ${{ steps.runtime.outputs.single_instance_id }}
+          WEB_IMAGE: ${{ steps.ecr.outputs.web }}:${{ github.sha }}
+          ORCHESTRATOR_IMAGE: ${{ steps.ecr.outputs.orchestrator }}:${{ github.sha }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            ping_status=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text 2>/dev/null || true)
+            if [ "${ping_status}" = "Online" ]; then
+              echo "SSM instance is online: ${INSTANCE_ID}"
+              break
+            fi
+            if [ "${i}" = "30" ]; then
+              echo "SSM instance did not come online: ${INSTANCE_ID}" >&2
+              exit 1
+            fi
+            echo "Waiting for SSM instance (${i}/30), status=${ping_status}"
+            sleep 10
+          done
+
+          secrets_json=$(terraform -chdir=infra/terraform output -json managed_secret_arns)
+          clerk_secret_arn=$(echo "${secrets_json}" | jq -r '."CLERK_SECRET_KEY" // empty')
+          openai_secret_arn=$(echo "${secrets_json}" | jq -r '."OPENAI_API_KEY" // empty')
+          if [ -z "${clerk_secret_arn}" ] || [ -z "${openai_secret_arn}" ]; then
+            echo "Missing managed secret ARNs for single-instance deployment." >&2
+            exit 1
+          fi
+
+          cat > deploy-single-instance.sh <<'SCRIPT'
+          set -euo pipefail
+          install_pkg() {
+            if ! command -v "$1" >/dev/null 2>&1; then
+              dnf install -y "$2"
+            fi
+          }
+
+          install_pkg docker docker
+          install_pkg aws awscli
+          install_pkg curl curl
+          if ! docker compose version >/dev/null 2>&1; then
+            dnf install -y docker-compose-plugin
+          fi
+
+          systemctl enable --now docker
+          mkdir -p /opt/fleet-health/data
+
+          CLERK_SECRET_KEY="$(aws secretsmanager get-secret-value --secret-id "__CLERK_SECRET_ARN__" --query SecretString --output text)"
+          OPENAI_API_KEY="$(aws secretsmanager get-secret-value --secret-id "__OPENAI_SECRET_ARN__" --query SecretString --output text)"
+
+          aws ecr get-login-password --region "__AWS_REGION__" | docker login --username AWS --password-stdin "__ECR_REGISTRY__"
+
+          cat > /opt/fleet-health/.env <<ENVFILE
+          WEB_IMAGE=__WEB_IMAGE__
+          ORCHESTRATOR_IMAGE=__ORCHESTRATOR_IMAGE__
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=__NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY__
+          CLERK_SECRET_KEY=$CLERK_SECRET_KEY
+          OPENAI_API_KEY=$OPENAI_API_KEY
+          ENVFILE
+          chmod 600 /opt/fleet-health/.env
+
+          cat > /opt/fleet-health/docker-compose.yml <<'COMPOSE'
+          services:
+            web:
+              image: ${WEB_IMAGE}
+              restart: unless-stopped
+              ports:
+                - "80:3000"
+              environment:
+                NODE_ENV: production
+                HOSTNAME: 0.0.0.0
+                PORT: "3000"
+                ORCHESTRATOR_API_BASE_URL: http://orchestrator:8000
+                NEXT_PUBLIC_ORCHESTRATOR_API_BASE_URL: ""
+                NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+                CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+              depends_on:
+                - orchestrator
+
+            orchestrator:
+              image: ${ORCHESTRATOR_IMAGE}
+              restart: unless-stopped
+              ports:
+                - "127.0.0.1:8000:8000"
+              volumes:
+                - /opt/fleet-health/data:/data
+              environment:
+                FLEET_DB_PATH: /data/fleet-health.db
+                FLEET_RETRIEVAL_BACKEND: lexical
+                OPENAI_API_KEY: ${OPENAI_API_KEY}
+          COMPOSE
+
+          docker compose --env-file /opt/fleet-health/.env -f /opt/fleet-health/docker-compose.yml pull
+          docker compose --env-file /opt/fleet-health/.env -f /opt/fleet-health/docker-compose.yml up -d --remove-orphans
+
+          for i in $(seq 1 24); do
+            web_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost/health || true)
+            orch_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:8000/health || true)
+            if [ "$web_code" = "200" ] && [ "$orch_code" = "200" ]; then
+              docker compose --env-file /opt/fleet-health/.env -f /opt/fleet-health/docker-compose.yml ps
+              exit 0
+            fi
+            echo "Waiting for services (${i}/24): web=${web_code}, orchestrator=${orch_code}"
+            sleep 10
+          done
+
+          docker compose --env-file /opt/fleet-health/.env -f /opt/fleet-health/docker-compose.yml ps
+          docker compose --env-file /opt/fleet-health/.env -f /opt/fleet-health/docker-compose.yml logs --tail=120
+          exit 1
+          SCRIPT
+
+          ecr_registry="${{ steps.ecr.outputs.web }}"
+          ecr_registry="${ecr_registry%%/*}"
+          sed -i \
+            -e "s#__CLERK_SECRET_ARN__#${clerk_secret_arn}#g" \
+            -e "s#__OPENAI_SECRET_ARN__#${openai_secret_arn}#g" \
+            -e "s#__AWS_REGION__#${AWS_REGION}#g" \
+            -e "s#__ECR_REGISTRY__#${ecr_registry}#g" \
+            -e "s#__WEB_IMAGE__#${WEB_IMAGE}#g" \
+            -e "s#__ORCHESTRATOR_IMAGE__#${ORCHESTRATOR_IMAGE}#g" \
+            -e "s#__NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY__#${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}#g" \
+            deploy-single-instance.sh
+
+          jq -n --rawfile command deploy-single-instance.sh \
+            '{commands: [$command], executionTimeout: ["900"]}' > ssm-parameters.json
+
+          command_id=$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Fleet Health Copilot single-instance runtime" \
+            --parameters file://ssm-parameters.json \
+            --query "Command.CommandId" \
+            --output text)
+
+          set +e
+          aws ssm wait command-executed --command-id "${command_id}" --instance-id "${INSTANCE_ID}"
+          wait_status=$?
+          set -e
+          aws ssm get-command-invocation \
+            --command-id "${command_id}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output text
+          exit "${wait_status}"
+
       - name: Terraform apply (pin image tags to commit SHA)
         env:
           TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
@@ -170,6 +401,7 @@ jobs:
             -var="container_image_tags={web=\"${{ github.sha }}\",orchestrator=\"${{ github.sha }}\"}"
 
       - name: Wait for ECS services to stabilize
+        if: steps.runtime.outputs.mode == 'ecs'
         run: |
           set -euo pipefail
           cluster=$(terraform -chdir=infra/terraform output -raw ecs_cluster_name)
@@ -208,6 +440,7 @@ jobs:
           exit 1
 
       - name: Post-deploy ALB health check
+        if: steps.runtime.outputs.mode == 'ecs'
         run: |
           set -euo pipefail
           alb=$(terraform -chdir=infra/terraform output -raw web_load_balancer_dns_name)
@@ -230,6 +463,7 @@ jobs:
           exit 1
 
       - name: Post-deploy API Gateway health check
+        if: steps.runtime.outputs.mode == 'ecs'
         run: |
           set -euo pipefail
           apigw=$(terraform -chdir=infra/terraform output -raw orchestrator_api_gateway_url || true)
@@ -249,4 +483,26 @@ jobs:
           done
 
           echo "API Gateway health check failed" >&2
+          exit 1
+
+      - name: Post-deploy CloudFront health check
+        run: |
+          set -euo pipefail
+          entrypoint=$(terraform -chdir=infra/terraform output -raw web_public_entrypoint_url)
+          if [ -z "${entrypoint}" ] || [ "${entrypoint}" = "null" ]; then
+            echo "Missing public entrypoint output." >&2
+            exit 1
+          fi
+
+          for i in $(seq 1 18); do
+            code=$(curl -k -o /dev/null -s -w "%{http_code}" "${entrypoint%/}/health" || true)
+            if [ "${code}" = "200" ]; then
+              echo "CloudFront health check passed with HTTP ${code}: ${entrypoint}"
+              exit 0
+            fi
+            echo "Waiting for CloudFront (${i}/18), got HTTP ${code}"
+            sleep 10
+          done
+
+          echo "CloudFront health check failed for ${entrypoint}" >&2
           exit 1

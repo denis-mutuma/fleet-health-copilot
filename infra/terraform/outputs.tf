@@ -46,8 +46,23 @@ output "web_cloudfront_domain_name" {
 }
 
 output "web_public_entrypoint_url" {
-  value       = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.web[0].domain_name}" : (var.enable_ecs ? "http://${aws_lb.web[0].dns_name}" : null)
+  value       = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.web[0].domain_name}" : (var.enable_ecs ? "http://${aws_lb.web[0].dns_name}" : (var.enable_single_instance ? "http://${aws_eip.single_instance[0].public_dns}" : null))
   description = "Preferred public entrypoint URL for the deployed web application."
+}
+
+output "single_instance_id" {
+  value       = var.enable_single_instance ? aws_instance.single_instance[0].id : null
+  description = "EC2 instance ID for the low-cost single-instance runtime when enabled."
+}
+
+output "single_instance_public_dns" {
+  value       = var.enable_single_instance ? aws_eip.single_instance[0].public_dns : null
+  description = "Public DNS name for the low-cost single-instance runtime when enabled."
+}
+
+output "single_instance_public_ip" {
+  value       = var.enable_single_instance ? aws_eip.single_instance[0].public_ip : null
+  description = "Elastic IP address for the low-cost single-instance runtime when enabled."
 }
 
 output "orchestrator_service_discovery_name" {

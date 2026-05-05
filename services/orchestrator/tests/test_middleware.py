@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 
 def _build_client(tmp_path, monkeypatch: object, env: dict[str, str] | None = None) -> TestClient:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("FLEET_DATABASE_URL", raising=False)
     monkeypatch.setenv("FLEET_DB_PATH", str(tmp_path / "test_fleet_health_middleware.db"))
     if env:
         for key, value in env.items():

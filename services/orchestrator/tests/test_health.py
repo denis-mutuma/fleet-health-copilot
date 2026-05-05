@@ -18,6 +18,8 @@ from fleet_health_orchestrator.rag import (
 
 
 def _build_client(tmp_path, monkeypatch: object) -> TestClient:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("FLEET_DATABASE_URL", raising=False)
     monkeypatch.setenv("FLEET_DB_PATH", str(tmp_path / "test_fleet_health.db"))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
@@ -291,6 +293,8 @@ def test_ready_endpoint(tmp_path, monkeypatch) -> None:
 
 def test_cors_reflects_configured_origin(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("FLEET_CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("FLEET_DATABASE_URL", raising=False)
     monkeypatch.setenv("FLEET_DB_PATH", str(tmp_path / "cors.db"))
     main_module = importlib.import_module("fleet_health_orchestrator.main")
     main_module = importlib.reload(main_module)
@@ -306,6 +310,8 @@ def test_cors_reflects_configured_origin(tmp_path, monkeypatch) -> None:
 
 def test_cors_not_enabled_without_env(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("FLEET_CORS_ORIGINS", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("FLEET_DATABASE_URL", raising=False)
     monkeypatch.setenv("FLEET_DB_PATH", str(tmp_path / "no_cors.db"))
     main_module = importlib.import_module("fleet_health_orchestrator.main")
     main_module = importlib.reload(main_module)

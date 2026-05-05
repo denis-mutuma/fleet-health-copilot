@@ -125,9 +125,9 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
 }
 
 locals {
-  cloudfront_web_origin_id = var.enable_single_instance ? "web-single-instance" : "web-alb"
+  cloudfront_web_origin_id = var.cloudfront_origin_mode == "single_instance" ? "web-single-instance" : "web-alb"
   cloudfront_web_origin_domain_name = (
-    var.enable_single_instance
+    var.cloudfront_origin_mode == "single_instance"
     ? aws_eip.single_instance[0].public_dns
     : aws_lb.web[0].dns_name
   )

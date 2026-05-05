@@ -76,39 +76,6 @@ jobs:
       - name: Terraform validate
         run: terraform -chdir=infra/terraform validate -no-color
 
-      - name: Prepare removable PostgreSQL database
-        run: |
-          set -euo pipefail
-          if ! grep -Eq '^[[:space:]]*enable_single_instance[[:space:]]*=[[:space:]]*true' "infra/terraform/env/${TF_ENV}.tfvars"; then
-            echo "Single-instance mode is not enabled; skipping PostgreSQL decommission preparation."
-            exit 0
-          fi
-
-          db_identifier="fleet-health-copilot-${TF_ENV}-postgres"
-          db_status=$(aws rds describe-db-instances \
-            --db-instance-identifier "${db_identifier}" \
-            --query 'DBInstances[0].DBInstanceStatus' \
-            --output text 2>/dev/null || true)
-          if [ -z "${db_status}" ] || [ "${db_status}" = "None" ]; then
-            echo "No existing PostgreSQL DB found for ${db_identifier}; skipping deletion protection update."
-            exit 0
-          fi
-
-          protection=$(aws rds describe-db-instances \
-            --db-instance-identifier "${db_identifier}" \
-            --query 'DBInstances[0].DeletionProtection' \
-            --output text)
-          if [ "${protection}" != "True" ]; then
-            echo "Deletion protection already disabled for ${db_identifier}."
-            exit 0
-          fi
-
-          aws rds modify-db-instance \
-            --db-instance-identifier "${db_identifier}" \
-            --no-deletion-protection \
-            --apply-immediately >/dev/null
-          aws rds wait db-instance-available --db-instance-identifier "${db_identifier}"
-
       - name: Resolve desired runtime mode
         id: desired-runtime
         run: |
@@ -144,18 +111,12 @@ jobs:
             -var="github_repository=${{ github.repository }}" \
             -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
             -var='container_image_tags={web="latest",orchestrator="latest"}' \
-            -target=aws_ecr_repository.service \
-            -target=aws_ecr_lifecycle_policy.service \
-            -target=aws_secretsmanager_secret.managed \
-            -target=aws_iam_role.single_instance \
-            -target=aws_iam_role_policy_attachment.single_instance_ssm \
-            -target=aws_iam_role_policy.single_instance_runtime \
-            -target=aws_iam_role_policy.single_instance_secret_access \
-            -target=aws_iam_instance_profile.single_instance \
-            -target=aws_security_group.single_instance \
-            -target=aws_eip.single_instance \
-            -target=aws_instance.single_instance \
-            -target=aws_eip_association.single_instance
+            -var="enable_ecs=true" \
+            -var="enable_postgres=true" \
+            -var="enable_api_gateway=true" \
+            -var="enable_waf=true" \
+            -var="enable_single_instance=true" \
+            -var="cloudfront_origin_mode=ecs"
 
       - name: Ensure Clerk runtime secret value is set
         env:
@@ -387,6 +348,35 @@ jobs:
             --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
             --output text
           exit "${wait_status}"
+
+      - name: Prepare removable PostgreSQL database
+        if: steps.runtime.outputs.mode == 'single-instance'
+        run: |
+          set -euo pipefail
+          db_identifier="fleet-health-copilot-${TF_ENV}-postgres"
+          db_status=$(aws rds describe-db-instances \
+            --db-instance-identifier "${db_identifier}" \
+            --query 'DBInstances[0].DBInstanceStatus' \
+            --output text 2>/dev/null || true)
+          if [ -z "${db_status}" ] || [ "${db_status}" = "None" ]; then
+            echo "No existing PostgreSQL DB found for ${db_identifier}; skipping deletion protection update."
+            exit 0
+          fi
+
+          protection=$(aws rds describe-db-instances \
+            --db-instance-identifier "${db_identifier}" \
+            --query 'DBInstances[0].DeletionProtection' \
+            --output text)
+          if [ "${protection}" != "True" ]; then
+            echo "Deletion protection already disabled for ${db_identifier}."
+            exit 0
+          fi
+
+          aws rds modify-db-instance \
+            --db-instance-identifier "${db_identifier}" \
+            --no-deletion-protection \
+            --apply-immediately >/dev/null
+          aws rds wait db-instance-available --db-instance-identifier "${db_identifier}"
 
       - name: Terraform apply (pin image tags to commit SHA)
         env:

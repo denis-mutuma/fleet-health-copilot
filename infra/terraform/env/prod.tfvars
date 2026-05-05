@@ -7,6 +7,7 @@ enable_orchestrator_efs = false
 enable_postgres         = false
 enable_api_gateway      = false
 enable_cloudfront       = true
+cloudfront_origin_mode  = "single_instance"
 enable_waf              = false
 enable_s3_vectors_rag   = false
 

@@ -77,10 +77,16 @@ variable "enable_single_instance" {
   type        = bool
   description = "Whether to create a low-cost single EC2 runtime that runs web and orchestrator containers with Docker Compose."
   default     = false
+}
+
+variable "cloudfront_origin_mode" {
+  type        = string
+  description = "CloudFront origin mode for the web distribution: ecs or single_instance."
+  default     = "ecs"
 
   validation {
-    condition     = !(var.enable_single_instance && var.enable_ecs)
-    error_message = "enable_single_instance and enable_ecs are mutually exclusive runtime modes."
+    condition     = contains(["ecs", "single_instance"], var.cloudfront_origin_mode)
+    error_message = "cloudfront_origin_mode must be ecs or single_instance."
   }
 }
 

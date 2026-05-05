@@ -1,9 +1,31 @@
 #!/bin/bash
 set -euxo pipefail
 
-dnf install -y docker docker-compose-plugin awscli amazon-ssm-agent curl
+dnf install -y docker awscli amazon-ssm-agent curl
 systemctl enable --now amazon-ssm-agent
 systemctl enable --now docker
+
+install_compose_plugin() {
+  if docker compose version >/dev/null 2>&1; then
+    return
+  fi
+
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64) compose_arch="x86_64" ;;
+    aarch64|arm64) compose_arch="aarch64" ;;
+    *) echo "Unsupported architecture for Docker Compose: $arch" >&2; exit 1 ;;
+  esac
+
+  mkdir -p /usr/local/lib/docker/cli-plugins
+  curl -fsSL \
+    "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-${compose_arch}" \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+  docker compose version
+}
+
+install_compose_plugin
 
 mkdir -p /opt/fleet-health/data
 

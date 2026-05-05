@@ -245,11 +245,46 @@ jobs:
           install_pkg aws awscli
           install_pkg curl curl
           if ! docker compose version >/dev/null 2>&1; then
-            dnf install -y docker-compose-plugin
+            arch="$(uname -m)"
+            case "$arch" in
+              x86_64) compose_arch="x86_64" ;;
+              aarch64|arm64) compose_arch="aarch64" ;;
+              *) echo "Unsupported architecture for Docker Compose: $arch" >&2; exit 1 ;;
+            esac
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            curl -fsSL \
+              "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-${compose_arch}" \
+              -o /usr/local/lib/docker/cli-plugins/docker-compose
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            docker compose version
           fi
 
           systemctl enable --now docker
           mkdir -p /opt/fleet-health/data
+          if ! mountpoint -q /opt/fleet-health/data; then
+            DATA_DEVICE=""
+            for candidate in \
+              "/dev/xvdf" \
+              "/dev/sdf" \
+              "/dev/nvme1n1"; do
+              if [ -e "$candidate" ]; then
+                DATA_DEVICE="$candidate"
+                break
+              fi
+            done
+
+            if [ -n "$DATA_DEVICE" ]; then
+              if ! blkid "$DATA_DEVICE"; then
+                mkfs.ext4 -F "$DATA_DEVICE"
+              fi
+
+              DATA_UUID="$(blkid -s UUID -o value "$DATA_DEVICE")"
+              if ! grep -q "$DATA_UUID" /etc/fstab; then
+                echo "UUID=$DATA_UUID /opt/fleet-health/data ext4 defaults,nofail 0 2" >> /etc/fstab
+              fi
+              mount /opt/fleet-health/data
+            fi
+          fi
 
           CLERK_SECRET_KEY="$(aws secretsmanager get-secret-value --secret-id "__CLERK_SECRET_ARN__" --query SecretString --output text)"
           OPENAI_API_KEY="$(aws secretsmanager get-secret-value --secret-id "__OPENAI_SECRET_ARN__" --query SecretString --output text)"

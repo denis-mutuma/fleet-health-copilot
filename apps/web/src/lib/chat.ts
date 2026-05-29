@@ -3,6 +3,10 @@ import {
   orchestratorRequest,
   toApiError as sharedToApiError
 } from "./api";
+import {
+  applyRequestIdentityHeaders,
+  type RequestIdentityHeaders,
+} from "./request-identity";
 
 export type ChatCitation = {
   document_id: string;
@@ -52,10 +56,12 @@ export type ChatConversation = {
 };
 
 export async function createChatSession(
-  incidentId?: string
+  incidentId?: string,
+  identity?: RequestIdentityHeaders
 ): Promise<ChatSession> {
   return orchestratorRequest<ChatSession>("/v1/chat/sessions", {
     method: "POST",
+    headers: applyRequestIdentityHeaders(new Headers(), identity),
     body: JSON.stringify({ incident_id: incidentId ?? null })
   });
 }
@@ -65,21 +71,27 @@ export async function listChatSessions(): Promise<ChatSession[]> {
 }
 
 export async function getChatConversation(
-  sessionId: string
+  sessionId: string,
+  identity?: RequestIdentityHeaders
 ): Promise<ChatConversation> {
   return orchestratorRequest<ChatConversation>(
-    `/v1/chat/sessions/${encodeURIComponent(sessionId)}`
+    `/v1/chat/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      headers: applyRequestIdentityHeaders(new Headers(), identity),
+    }
   );
 }
 
 export async function postChatMessage(
   sessionId: string,
-  content: string
+  content: string,
+  identity?: RequestIdentityHeaders
 ): Promise<ChatConversation> {
   return orchestratorRequest<ChatConversation>(
     `/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
     {
       method: "POST",
+      headers: applyRequestIdentityHeaders(new Headers(), identity),
       body: JSON.stringify({ content })
     }
   );

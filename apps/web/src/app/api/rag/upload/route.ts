@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorPayload } from "@/lib/api";
 import { uploadRagDocument } from "@/lib/rag";
+import { readRequestIdentityHeaders } from "@/lib/request-identity";
 
 export async function POST(request: NextRequest) {
+  const identity = readRequestIdentityHeaders(request);
   const formData = await request.formData();
   const file = formData.get("file");
 
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await uploadRagDocument(outbound);
+    const result = await uploadRagDocument(outbound, identity);
     if (!result.ok) {
       return NextResponse.json(
         apiErrorPayload(result.message, "upstream_request_failed"),

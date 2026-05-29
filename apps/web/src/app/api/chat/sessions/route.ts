@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorPayload } from "@/lib/api";
 import { createChatSession, listChatSessions, toApiError } from "@/lib/chat";
+import { readRequestIdentityHeaders } from "@/lib/request-identity";
 
 export async function GET() {
   try {
@@ -16,6 +17,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const identity = readRequestIdentityHeaders(request);
   const body = (await request.json().catch(() => null)) as {
     incident_id?: unknown;
   } | null;
@@ -36,7 +38,8 @@ export async function POST(request: NextRequest) {
     const session = await createChatSession(
       body?.incident_id && typeof body.incident_id === "string"
         ? body.incident_id.trim() || undefined
-        : undefined
+        : undefined,
+      identity
     );
     return NextResponse.json(session, { status: 201 });
   } catch (error) {

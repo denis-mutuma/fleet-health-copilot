@@ -22,6 +22,32 @@ describe("rag document delete route", () => {
 
     expect(response.status).toBe(200);
     expect(payload).toEqual({ document_id: "rb_1", deleted_chunks: 4 });
+    expect(ragDeleteMocks.deleteRagDocumentFamily).toHaveBeenCalledWith("rb_1", undefined);
+  });
+
+  it("forwards identity headers to rag document deletion", async () => {
+    ragDeleteMocks.deleteRagDocumentFamily.mockResolvedValueOnce({ ok: true, deletedChunks: 1 });
+
+    const request = new Request("http://localhost/api/rag/documents/rb_1", {
+      method: "DELETE",
+      headers: {
+        "x-actor-id": "usr_6",
+        "x-tenant-id": "tenant_6",
+        "x-roles": "admin",
+      },
+    });
+
+    await DELETE(request as never, {
+      params: Promise.resolve({ documentId: "rb_1" }),
+    });
+
+    expect(ragDeleteMocks.deleteRagDocumentFamily).toHaveBeenCalledWith("rb_1", {
+      actorId: "usr_6",
+      tenantId: "tenant_6",
+      fleetId: undefined,
+      authProvider: undefined,
+      roles: ["admin"],
+    });
   });
 
   it("returns the shared error shape when the rag client returns a typed failure", async () => {

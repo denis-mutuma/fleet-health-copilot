@@ -25,9 +25,36 @@ describe("chat session detail route", () => {
     });
     const payload = await response.json();
 
-    expect(chatSessionMocks.getChatConversation).toHaveBeenCalledWith("chat_123");
+    expect(chatSessionMocks.getChatConversation).toHaveBeenCalledWith("chat_123", undefined);
     expect(response.status).toBe(200);
     expect(payload.session.session_id).toBe("chat_123");
+  });
+
+  it("forwards identity headers to chat conversation lookup", async () => {
+    chatSessionMocks.getChatConversation.mockResolvedValueOnce({
+      session: { session_id: "chat_123", incident_id: null },
+      messages: [],
+    });
+
+    const request = new Request("http://localhost/api/chat/sessions/chat_123", {
+      headers: {
+        "x-actor-id": "usr_2",
+        "x-tenant-id": "tenant_7",
+        "x-roles": "operator",
+      },
+    });
+
+    await GET(request as never, {
+      params: Promise.resolve({ sessionId: "chat_123" }),
+    });
+
+    expect(chatSessionMocks.getChatConversation).toHaveBeenCalledWith("chat_123", {
+      actorId: "usr_2",
+      tenantId: "tenant_7",
+      fleetId: undefined,
+      authProvider: undefined,
+      roles: ["operator"],
+    });
   });
 
   it("uses the shared error shape for upstream failures", async () => {

@@ -71,6 +71,46 @@ describe("rag upload route", () => {
     expect(outbound.get("tags")).toBe("battery,thermal");
     expect(outbound.get("chunk_size_chars")).toBe("1200");
     expect(outbound.get("chunk_overlap_chars")).toBe("200");
+    expect(ragUploadMocks.uploadRagDocument).toHaveBeenCalledWith(outbound, undefined);
+  });
+
+  it("forwards identity headers to rag uploads", async () => {
+    ragUploadMocks.uploadRagDocument.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        document_id: "rb_2",
+        source: "runbook",
+        title: "Battery",
+        chunk_count: 1,
+        indexed_chunks: 1,
+        retrieval_backend: "lexical",
+        embedding_provider: "hash",
+        embedding_model: "text-embedding-3-large",
+        llm_model: "gpt-4o-mini",
+      },
+    });
+
+    const formData = new FormData();
+    formData.append("file", new File(["hello"], "runbook.md", { type: "text/markdown" }));
+    const request = new Request("http://localhost/api/rag/upload", {
+      method: "POST",
+      headers: {
+        "x-actor-id": "usr_4",
+        "x-tenant-id": "tenant_4",
+        "x-roles": "operator",
+      },
+      body: formData,
+    });
+
+    await POST(request as never);
+
+    expect(ragUploadMocks.uploadRagDocument).toHaveBeenCalledWith(expect.any(FormData), {
+      actorId: "usr_4",
+      tenantId: "tenant_4",
+      fleetId: undefined,
+      authProvider: undefined,
+      roles: ["operator"],
+    });
   });
 
   it("returns the shared error shape when upload returns a typed failure", async () => {

@@ -1,10 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { apiErrorPayload } from "@/lib/api";
 import { listRagDocumentFamilies, toRagApiError } from "@/lib/rag";
+import { readRequestIdentityHeaders } from "@/lib/request-identity";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const identity = readRequestIdentityHeaders(request);
   try {
-    const documents = await listRagDocumentFamilies();
+    const documents = await listRagDocumentFamilies(identity);
     return NextResponse.json(documents);
   } catch (error) {
     const apiError = toRagApiError(error);

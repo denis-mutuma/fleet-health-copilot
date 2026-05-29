@@ -1,4 +1,5 @@
 import { OrchestratorRequestError, orchestratorRequest } from "./api";
+import { applyRequestIdentityHeaders } from "./request-identity";
 
 export { OrchestratorRequestError };
 
@@ -91,12 +92,7 @@ export async function updateIncidentStatus(
   reason?: string,
   identity?: RequestIdentityHeaders
 ): Promise<IncidentReport> {
-  const headers = new Headers();
-  if (identity?.actorId) headers.set("x-actor-id", identity.actorId);
-  if (identity?.tenantId) headers.set("x-tenant-id", identity.tenantId);
-  if (identity?.fleetId) headers.set("x-fleet-id", identity.fleetId);
-  if (identity?.authProvider) headers.set("x-auth-provider", identity.authProvider);
-  if (identity?.roles?.length) headers.set("x-roles", identity.roles.join(","));
+  const headers = applyRequestIdentityHeaders(new Headers(), identity);
 
   return orchestratorRequest<IncidentReport>(
     `/v1/incidents/${encodeURIComponent(incidentId)}`,
@@ -148,12 +144,7 @@ export async function listAuditEvents(opts?: {
 export async function orchestrateCanonicalEvent(
   identity?: RequestIdentityHeaders
 ): Promise<IncidentReport> {
-  const headers = new Headers();
-  if (identity?.actorId) headers.set("x-actor-id", identity.actorId);
-  if (identity?.tenantId) headers.set("x-tenant-id", identity.tenantId);
-  if (identity?.fleetId) headers.set("x-fleet-id", identity.fleetId);
-  if (identity?.authProvider) headers.set("x-auth-provider", identity.authProvider);
-  if (identity?.roles?.length) headers.set("x-roles", identity.roles.join(","));
+  const headers = applyRequestIdentityHeaders(new Headers(), identity);
 
   return orchestratorRequest<IncidentReport>("/v1/orchestrate/event", {
     method: "POST",

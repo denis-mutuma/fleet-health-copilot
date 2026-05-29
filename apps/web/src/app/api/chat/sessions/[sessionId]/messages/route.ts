@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorPayload } from "@/lib/api";
 import { postChatMessage, toApiError } from "@/lib/chat";
+import { readRequestIdentityHeaders } from "@/lib/request-identity";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -8,6 +9,7 @@ type RouteContext = {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const { sessionId } = await context.params;
+  const identity = readRequestIdentityHeaders(request);
   const body = (await request.json().catch(() => null)) as {
     content?: unknown;
   } | null;
@@ -20,7 +22,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const conversation = await postChatMessage(sessionId, body.content.trim());
+    const conversation = await postChatMessage(sessionId, body.content.trim(), identity);
     return NextResponse.json(conversation);
   } catch (error) {
     const apiError = toApiError(error);

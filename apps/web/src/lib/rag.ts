@@ -4,6 +4,10 @@ import {
   orchestratorRequest,
   readApiErrorMessage,
 } from "./api";
+import {
+  applyRequestIdentityHeaders,
+  type RequestIdentityHeaders,
+} from "./request-identity";
 
 export type RagIngestionResponse = {
   document_id: string;
@@ -26,10 +30,12 @@ export type RagDocumentFamily = {
 };
 
 export async function uploadRagDocument(
-  payload: FormData
+  payload: FormData,
+  identity?: RequestIdentityHeaders
 ): Promise<{ ok: true; data: RagIngestionResponse } | { ok: false; status: number; message: string }> {
   const response = await fetch(`${orchestratorBaseUrl()}/v1/rag/documents/upload`, {
     method: "POST",
+    headers: applyRequestIdentityHeaders(new Headers(), identity),
     body: payload,
     cache: "no-store"
   });
@@ -57,17 +63,23 @@ export async function uploadRagDocument(
   };
 }
 
-export async function listRagDocumentFamilies(): Promise<RagDocumentFamily[]> {
-  return orchestratorRequest<RagDocumentFamily[]>("/v1/rag/documents");
+export async function listRagDocumentFamilies(
+  identity?: RequestIdentityHeaders
+): Promise<RagDocumentFamily[]> {
+  return orchestratorRequest<RagDocumentFamily[]>("/v1/rag/documents", {
+    headers: applyRequestIdentityHeaders(new Headers(), identity),
+  });
 }
 
 export async function deleteRagDocumentFamily(
-  documentId: string
+  documentId: string,
+  identity?: RequestIdentityHeaders
 ): Promise<{ ok: true; deletedChunks: number } | { ok: false; status: number; message: string }> {
   const response = await fetch(
     `${orchestratorBaseUrl()}/v1/rag/documents/${encodeURIComponent(documentId)}`,
     {
       method: "DELETE",
+      headers: applyRequestIdentityHeaders(new Headers(), identity),
       cache: "no-store"
     }
   );

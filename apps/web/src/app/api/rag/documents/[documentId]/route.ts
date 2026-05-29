@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorPayload } from "@/lib/api";
 import { deleteRagDocumentFamily } from "@/lib/rag";
+import { readRequestIdentityHeaders } from "@/lib/request-identity";
 
 type RouteContext = {
   params: Promise<{ documentId: string }>;
 };
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   const { documentId } = await context.params;
+  const identity = readRequestIdentityHeaders(request);
 
   try {
-    const result = await deleteRagDocumentFamily(documentId);
+    const result = await deleteRagDocumentFamily(documentId, identity);
     if (!result.ok) {
       return NextResponse.json(
         apiErrorPayload(result.message, "upstream_request_failed"),

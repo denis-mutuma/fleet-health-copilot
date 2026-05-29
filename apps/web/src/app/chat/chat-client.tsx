@@ -556,6 +556,8 @@ export default function ChatClient() {
     setLoading(true);
     setError("");
     try {
+      // Backend now enforces LLM-only turns, so failed requests should
+      // surface as explicit user-visible errors.
       const updated = await fetchJson<ChatConversation>(
         `/api/chat/sessions/${encodeURIComponent(activeSessionId)}/messages`,
         { method: "POST", body: JSON.stringify({ content: value.trim() }) }
@@ -571,6 +573,7 @@ export default function ChatClient() {
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Enter sends; Shift+Enter keeps multi-line input authoring.
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendPrompt(prompt).catch(() => null);

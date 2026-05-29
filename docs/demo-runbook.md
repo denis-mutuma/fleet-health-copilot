@@ -68,6 +68,8 @@ Expected result:
 
 Open `http://localhost:3000/chat` and create a new session.
 
+Note: chat is LLM-only (`gpt-5.4-mini`) with tool-calling and no deterministic slash-command fallback.
+
 Recommended script:
 
 1. Ask a retrieval question:
@@ -101,7 +103,7 @@ Expected: checklist card with actionable steps.
 Recommend whether incident <incident_id> should move to acknowledged and explain why.
 ```
 
-Expected: status update confirmation card.
+Expected: recommendation grounded in incident context and citations.
 
 5. Report a new incident from chat:
 
@@ -109,7 +111,7 @@ Expected: status update confirmation card.
 Draft an incident report for a battery_temp_c threshold breach on robot-03 (value 74.2, threshold 65).
 ```
 
-Expected: new incident creation confirmation with link to details.
+Expected: structured report guidance grounded in retrieved evidence.
 
 6. Generate simulation guidance from chat:
 
@@ -117,7 +119,7 @@ Expected: new incident creation confirmation with link to details.
 Walk through a simulated high-severity thermal incident and provide operator actions.
 ```
 
-Expected: simulated incident created and returned as action payload.
+Expected: operational playbook-style guidance with explicit next actions.
 
 ## Evaluation Demo
 

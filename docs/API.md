@@ -260,6 +260,8 @@ Chat execution behavior is controlled by environment settings:
 
 Chat messages are processed by the LLM chat orchestrator with tool-calling.
 Use natural language prompts for incident triage, summaries, and operational guidance.
+There is no deterministic fallback path for `/v1/chat/sessions/{session_id}/messages`; when the LLM path is unavailable the endpoint returns a readiness error.
+The current chat runtime is pinned to `gpt-5.4-mini` for consistency across environments.
 
 ## Orchestration
 

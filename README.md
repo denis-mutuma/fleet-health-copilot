@@ -81,10 +81,16 @@ The app shell exposes three sections in the left sidebar:
 | Section | Path | Purpose |
 | ------- | ---- | ------- |
 | **Operations** | `/` | Dashboard with incident queue, status stats, and simulation control |
-| **Chat** | `/chat` | Persistent operator chat with RAG citations and action tools |
+| **Chat** | `/chat` | Persistent operator chat with LLM tool-calling and RAG citations |
 | **Knowledge** | `/rag` | Retrieval corpus management — upload, list, and delete documents |
 
-From an open incident, click **"Open chat for this incident"** to jump into a context-scoped conversation. From chat you can ask grounded questions, update status, generate checklists, and create or simulate incidents.
+From an open incident, click **"Open chat for this incident"** to jump into a context-scoped conversation. Chat requests are handled by the LLM orchestrator and should be phrased in natural language.
+
+Current chat behavior:
+
+- Chat turns are processed through OpenAI (`gpt-5.4-mini`) with tool-calling enabled.
+- The API uses a fail-fast model for chat: if model/tool orchestration is unavailable, it returns a readiness error.
+- The legacy deterministic slash-command flow is removed; prompts should be natural language.
 
 ## Architecture
 
@@ -208,10 +214,12 @@ IAM: grant `s3vectors:QueryVectors`, and `s3vectors:GetVectors` when metadata or
 
 **OpenAI LLM calls** (requires `FLEET_OPENAI_API_KEY`): incident summary refinement, diagnosis generation/enrichment, and action planning use OpenAI Responses API calls with traces, defaulting to `gpt-4o-mini` (`LLM_REPORT_MODEL`, `LLM_DIAGNOSIS_MODEL`).
 
-**OpenAI chat orchestration** (optional):
+**OpenAI chat orchestration**:
 
-- Enable with `LLM_CHAT_ENABLED=true`.
-- Chat model controls: `LLM_CHAT_MODEL`, `LLM_CHAT_TEMPERATURE`, `LLM_CHAT_MAX_OUTPUT_TOKENS`.
+- Chat turns are processed via `gpt-5.4-mini`.
+- `LLM_CHAT_MODEL` is still accepted as config input but chat execution is pinned in code for consistency.
+- If chat orchestration is unavailable or the OpenAI request fails, the API returns an explicit readiness error (no deterministic fallback).
+- Runtime controls: `LLM_CHAT_TEMPERATURE`, `LLM_CHAT_MAX_OUTPUT_TOKENS`.
 - Tool safety controls: `CHAT_TOOL_TIMEOUT_SECONDS` (hard timeout per tool call) and `CHAT_TOOL_MAX_CALLS_PER_TURN` (turn-level cap).
 - Tool transport:
   - `CHAT_TOOL_TRANSPORT=local` keeps in-process MCP-style tool execution.
@@ -353,7 +361,7 @@ The web container builds the Next.js app and serves it with `next start`. Supply
 
 ## Current Scope
 
-The current implementation is a concise capstone core: deterministic six-agent orchestration (monitor through reporter), lexical RAG (default), optional AWS S3 Vectors RAG with pluggable embeddings, MCP tools, SQLite persistence, Clerk-protected OpenAI-style UI, evaluation metrics (including retrieval mean reciprocal rank and verifier pass rate), and AWS deployment scaffolding. Retrieval lives in `services/orchestrator/src/fleet_health_orchestrator/rag.py` with helpers in `embeddings.py`.
+The current implementation is a concise capstone core: deterministic six-agent orchestration (monitor through reporter), lexical RAG (default), optional AWS S3 Vectors RAG with pluggable embeddings, MCP tools, SQLite persistence, Clerk-protected fleet operations UI, evaluation metrics (including retrieval mean reciprocal rank and verifier pass rate), and AWS deployment scaffolding. Retrieval lives in `services/orchestrator/src/fleet_health_orchestrator/rag.py` with helpers in `embeddings.py`.
 
 AWS infrastructure remains scaffolded under `infra/terraform` for optional environment provisioning. For S3 Vectors and embeddings, keep **`FLEET_EMBEDDING_PROVIDER`** aligned with indexing and query-time configuration; optional OpenAI flags are documented under **Optional OpenAI assist** above.
 

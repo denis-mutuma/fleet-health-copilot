@@ -44,6 +44,8 @@ class ChatToolOrchestrator:
         self._mcp_adapter = mcp_adapter
 
     def can_use_llm(self) -> bool:
+        # Keep compatibility with both old and new settings objects while
+        # enforcing that a non-empty API key is present at runtime.
         chat_enabled = bool(
             getattr(
                 self._settings,

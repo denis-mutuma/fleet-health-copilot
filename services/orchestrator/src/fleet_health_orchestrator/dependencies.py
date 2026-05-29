@@ -130,7 +130,7 @@ def initialize_dependencies() -> AppDependencies:
         )
         logger.info("Chat tool orchestrator initialized")
     except Exception as exc:
-        logger.warning("Chat tool orchestrator initialization failed; deterministic fallback remains active: %s", exc)
+        logger.warning("Chat tool orchestrator initialization failed; chat requests will fail fast: %s", exc)
 
     metrics = RuntimeMetrics()
 

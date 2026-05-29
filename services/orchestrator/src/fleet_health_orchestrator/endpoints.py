@@ -1222,6 +1222,7 @@ def post_chat_message(
             details={"reason": "chat_orchestrator_not_initialized"},
         )
 
+    # Include prior messages so the LLM can preserve thread context.
     history = dependencies.repository.list_chat_messages(clean_session_id)
     llm_turn_started_at = perf_counter()
     try:
@@ -1231,6 +1232,7 @@ def post_chat_message(
             chat_history=history,
         )
     except Exception as exc:
+        # Surface model/tool-call failures directly to clients.
         raise ReadinessError(
             "Chat AI request failed.",
             details={"reason": str(exc)[:500]},
@@ -1238,6 +1240,7 @@ def post_chat_message(
 
     llm_turn_latency_ms = (perf_counter() - llm_turn_started_at) * 1000
     if turn_result is None:
+        # Guard against missing key/disabled model path.
         raise ReadinessError(
             "Chat AI is unavailable.",
             details={"reason": "llm_not_enabled_or_missing_key"},

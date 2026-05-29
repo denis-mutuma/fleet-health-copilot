@@ -63,6 +63,15 @@ The agent workflow is deterministic by design so the capstone demo remains expla
 
 This keeps responsibilities separated while allowing OpenAI-backed diagnosis, planning, and summary refinement where configured.
 
+## Chat Orchestration Design (Current)
+
+The operator chat path is now LLM-first and fail-fast:
+
+- Chat turns are processed through OpenAI `gpt-5.4-mini` with tool-calling support.
+- The API no longer falls back to deterministic slash-command handling.
+- When chat orchestration is unavailable (missing key, model/tool failure), the endpoint returns explicit readiness errors.
+- Operators interact with chat using natural-language prompts rather than command syntax.
+
 ## Retrieval Design
 
 Retrieval and ingestion use a backend interface:
@@ -146,7 +155,7 @@ Known remaining gaps:
 
 - S3 Vectors **ANN quality** still depends on using the same **`FLEET_EMBEDDING_PROVIDER`** (e.g. `openai`, `http`, `sentence_transformers`) and dimension for both [`index_s3_vectors.py`](../services/orchestrator/scripts/index_s3_vectors.py) and live queries; the default `hash` provider is deterministic only (the API logs a warning when `s3vectors` + hash). See [s3-vectors-operations.md](s3-vectors-operations.md).
 - Deploys are automated through `.github/workflows/deploy-aws.yml` for `main` (prod), including Terraform apply and ECR image publishing. Environment secrets and networking inputs (VPC/subnets) still need to be provided in the `prod` GitHub Environment; Terraform now provisions PostgreSQL, API Gateway, CloudFront, and WAF as part of the production path.
-- Agent outputs support OpenAI Responses API calls for summary refinement, diagnosis generation, and action planning (`gpt-4o-mini` by default), while verifier constraints still enforce conservative and grounded actions.
+- Agent outputs support OpenAI Responses API calls for summary refinement, diagnosis generation, and action planning (`gpt-4o-mini` by default), while chat orchestration is pinned to `gpt-5.4-mini`; verifier constraints still enforce conservative and grounded actions.
 - PostCSS remains flagged through Next with no safe npm fix available on the current line.
 
 ## Capstone Requirement Mapping

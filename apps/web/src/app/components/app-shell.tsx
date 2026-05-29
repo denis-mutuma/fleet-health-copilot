@@ -85,6 +85,9 @@ export default function AppShell({ children }: AppShellProps) {
             <h1 className="topbar-title">Fleet Health Copilot</h1>
           </div>
           <div className="app-topbar-actions">
+            <span className="topbar-search" aria-hidden="true">
+              Search workspace
+            </span>
             <span className="topbar-chip">RAG-enabled</span>
             <SignedIn>
               <UserButton />

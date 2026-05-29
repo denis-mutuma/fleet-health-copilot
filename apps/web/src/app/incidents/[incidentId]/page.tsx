@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { getIncident, type IncidentReport } from "@/lib/incidents";
 import IncidentStatusActions from "@/app/components/incident-status-actions";
 
+export const dynamic = "force-dynamic";
+
 function statusLabel(status: IncidentReport["status"]): string {
   const normalized = status.replace("_", " ");
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);

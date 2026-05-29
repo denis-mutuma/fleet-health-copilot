@@ -2,6 +2,8 @@ import Link from "next/link";
 import RagCorpusTable from "@/app/components/rag-corpus-table";
 import { listRagDocumentFamilies, type RagDocumentFamily } from "@/lib/rag";
 
+export const dynamic = "force-dynamic";
+
 export default async function RagPage() {
   let documents: RagDocumentFamily[] = [];
   let unavailable = false;

@@ -16,18 +16,15 @@ type AppShellProps = {
 const NAV_ITEMS = [
   {
     href: "/",
-    label: "Operations",
-    description: "Dashboard and incidents"
+    label: "Operations"
   },
   {
     href: "/chat",
-    label: "Chat",
-    description: "Operator copilot"
+    label: "Chat"
   },
   {
     href: "/rag",
-    label: "Knowledge",
-    description: "Retrieval corpus"
+    label: "Knowledge"
   }
 ] as const;
 
@@ -63,7 +60,6 @@ export default function AppShell({ children }: AppShellProps) {
               className={`app-nav-link ${isActive(pathname, item.href) ? "active" : ""}`}
             >
               <span className="app-nav-title">{item.label}</span>
-              <span className="app-nav-description">{item.description}</span>
             </Link>
           ))}
         </nav>
@@ -85,9 +81,7 @@ export default function AppShell({ children }: AppShellProps) {
             <h1 className="topbar-title">Fleet Health Copilot</h1>
           </div>
           <div className="app-topbar-actions">
-            <span className="topbar-search" aria-hidden="true">
-              Search workspace
-            </span>
+            <span className="topbar-chip">Operations console</span>
             <span className="topbar-chip">RAG-enabled</span>
             <SignedIn>
               <UserButton />

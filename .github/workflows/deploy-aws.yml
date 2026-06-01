@@ -110,13 +110,7 @@ jobs:
             -var-file="env/${TF_ENV}.tfvars" \
             -var="github_repository=${{ github.repository }}" \
             -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
-            -var='container_image_tags={web="latest",orchestrator="latest"}' \
-            -var="enable_ecs=true" \
-            -var="enable_postgres=true" \
-            -var="enable_api_gateway=true" \
-            -var="enable_waf=true" \
-            -var="enable_single_instance=true" \
-            -var="cloudfront_origin_mode=ecs"
+            -var='container_image_tags={web="latest",orchestrator="latest"}'
 
       - name: Ensure Clerk runtime secret value is set
         env:

@@ -21,19 +21,19 @@ const TOOL_PAYLOAD_PREVIEW_MAX_CHARS = 1200;
 
 const QUICK_ACTIONS = [
   {
-    label: "Summarize active incidents",
+    label: "Rank active signals",
     prompt: "Summarize active incidents and prioritize what we should work on first."
   },
   {
-    label: "Investigate battery thermal drift",
+    label: "Thermal drift check",
     prompt: "Investigate battery thermal drift patterns and recommended next actions."
   },
   {
-    label: "Draft an operator checklist",
+    label: "Triage checklist",
     prompt: "Draft a concise operator checklist for triaging a high-severity device alert."
   },
   {
-    label: "Incident report draft",
+    label: "Report draft",
     prompt: "Draft a structured incident report for a battery_temp_c threshold breach on robot-03."
   }
 ];
@@ -590,41 +590,40 @@ export default function ChatClient() {
   return (
     <main className="container page-grid" aria-label="Incident operations chat">
       <header className="hero">
-        <p className="eyebrow">Operator chat</p>
-        <h1>Coordinate incidents through grounded conversation.</h1>
+        <p className="eyebrow">Comms console</p>
+        <h1>Incident communications</h1>
         <p>
-          Ask evidence-backed questions, report incidents in natural language, inspect citations,
-          and execute operational actions without leaving the thread.
+          Use the thread for incident triage, cited answers, status changes, and handoffs.
         </p>
         <div className="report-metadata">
           <span>{sessions.length} sessions</span>
           <span>{activeSession?.incident_id ? `Scoped to ${activeSession.incident_id}` : "General ops mode"}</span>
-          <span>Citations grouped by source</span>
+          <span>Citations by source</span>
         </div>
         <div className="context-strip" aria-label="Chat context">
           <div className="context-item">
-            <span className="context-title">Mode</span>
+            <span className="context-title">Scope</span>
             <span className="context-value">
               {activeSession?.incident_id ? "Incident-scoped" : "Fleet-wide operations"}
             </span>
           </div>
           <div className="context-item">
-            <span className="context-title">Active session</span>
+            <span className="context-title">Session clock</span>
             <span className="context-value">
               {activeSession ? sessionLastUpdated(activeSession) : "No active session"}
             </span>
           </div>
           <div className="context-item">
-            <span className="context-title">Shortcuts</span>
-            <span className="context-value">Use natural language prompts for all actions</span>
+            <span className="context-title">Action mode</span>
+            <span className="context-value">Natural language dispatch</span>
           </div>
         </div>
         <div className="actions action-group">
           <Link href="/" className="secondary-button rag-link-button">
-            Back to dashboard
+            Back to operations
           </Link>
           <Link href="/rag" className="secondary-button rag-link-button">
-            Review knowledge corpus
+            Review corpus
           </Link>
         </div>
       </header>

@@ -17,13 +17,12 @@ export default async function RagPage() {
   const totalChunks = documents.reduce((sum, item) => sum + item.chunk_count, 0);
 
   return (
-    <main className="container page-grid" aria-label="RAG corpus management">
+    <main className="container page-grid" aria-label="Knowledge inventory">
       <header className="hero">
-        <p className="eyebrow">Knowledge workspace</p>
-        <h1>Keep retrieval grounded and current.</h1>
+        <p className="eyebrow">Knowledge inventory</p>
+        <h1>Runbook corpus control</h1>
         <p>
-          Review ingested context, upload new operating knowledge, and keep the corpus that powers
-          citations and agent reasoning healthy.
+          Track indexed runbooks, source coverage, and retrieval material used by operator chat.
         </p>
         <div className="report-metadata">
           <span>{documents.length} document families</span>
@@ -32,10 +31,10 @@ export default async function RagPage() {
         </div>
         <div className="actions action-group">
           <Link href="/" className="secondary-button rag-link-button">
-            Back to dashboard
+            Back to operations
           </Link>
           <Link href="/chat" className="secondary-button rag-link-button">
-            Ask the copilot
+            Open comms
           </Link>
         </div>
       </header>
@@ -53,14 +52,14 @@ export default async function RagPage() {
             <section className="card">
               <div className="section-heading">
                 <div>
-                  <p className="eyebrow">Coverage</p>
-                  <h2>What good corpus hygiene looks like</h2>
+                  <p className="eyebrow">Corpus controls</p>
+                  <h2>Runbook readiness checks</h2>
                 </div>
               </div>
               <ol className="timeline-list">
-                <li>Keep current runbooks uploaded with source and tag metadata.</li>
-                <li>Review citations in chat after changes to confirm retrieval quality.</li>
-                <li>Remove stale or duplicated documents when they dilute relevance.</li>
+                <li>Index current runbooks with source and tag metadata.</li>
+                <li>Review chat citations after corpus changes.</li>
+                <li>Remove stale or duplicated documents that dilute retrieval.</li>
               </ol>
             </section>
           </section>

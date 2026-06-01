@@ -55,7 +55,7 @@ export default async function HomePage() {
   const latestIncident = incidents[0];
 
   return (
-    <main className="container home-layout" aria-label="Fleet incident operations dashboard">
+    <main className="container home-layout" aria-label="Fleet incident operations board">
       <header className="command-header">
         <div className="command-lockup">
           <Image

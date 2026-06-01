@@ -36,14 +36,14 @@ export default async function IncidentDetailPage({
     return (
       <main className="container">
         <header className="hero">
-          <p className="eyebrow">Incident report</p>
+          <p className="eyebrow">Incident file</p>
           <h1>Service unavailable</h1>
           <p className="error">
             Could not load incident data because the orchestrator is
             unavailable.
           </p>
           <p>
-            <Link href="/">Back to dashboard</Link>
+            <Link href="/">Back to operations</Link>
           </p>
         </header>
       </main>
@@ -59,18 +59,18 @@ export default async function IncidentDetailPage({
       <nav className="breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Operations</Link>
         <span aria-hidden="true">/</span>
-        <span>Incident investigation</span>
+        <span>Incident file</span>
         <span aria-hidden="true">/</span>
         <span className="mono" aria-current="page">{incident.incident_id}</span>
       </nav>
 
       <header className="hero">
-        <p className="eyebrow">Incident investigation</p>
+        <p className="eyebrow">Incident file</p>
         <h1>{incident.summary}</h1>
         <p>
-          Device <strong>{incident.device_id}</strong> is currently tracked under
+          Device <strong>{incident.device_id}</strong> is tracked under
           <span className={`status-badge status-${incident.status}`}> {statusLabel(incident.status)}</span>
-          . Review evidence, verify the reasoning chain, and coordinate action from chat.
+          . Review evidence, verification, lifecycle, and action state.
         </p>
         <div className="report-metadata">
           <span className="mono">{incident.incident_id}</span>
@@ -90,19 +90,44 @@ export default async function IncidentDetailPage({
             href={`/chat?incidentId=${encodeURIComponent(incident.incident_id)}`}
             className="button rag-link-button"
           >
-            Open chat for this incident
+            Open comms for incident
           </Link>
           <Link href="/" className="secondary-button rag-link-button">
-            Back to dashboard
+            Back to operations
           </Link>
         </div>
       </header>
+
+      <section className="card">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Evidence</p>
+            <h2>Retrieved context</h2>
+          </div>
+        </div>
+        <div className="evidence-grid">
+          {Object.entries(incident.evidence).map(([key, values], idx) => (
+            <div key={`evidence-${idx}`} className="evidence-group">
+              <h3>{key.replaceAll("_", " ")}</h3>
+              {values.length === 0 ? (
+                <p className="muted">No matches</p>
+              ) : (
+                <ul>
+                  {values.map((value, valIdx) => (
+                    <li key={`evidence-${idx}-${valIdx}`}>{value}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="panel-grid">
         <section className="card">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Diagnosis</p>
+              <p className="eyebrow">Root cause</p>
               <h2>Root cause hypotheses</h2>
             </div>
           </div>
@@ -209,7 +234,7 @@ export default async function IncidentDetailPage({
           <div className="section-heading">
             <div>
               <p className="eyebrow">Planning</p>
-              <h2>Recommended actions</h2>
+              <h2>Action plan</h2>
             </div>
           </div>
           <ul>
@@ -234,30 +259,6 @@ export default async function IncidentDetailPage({
         </section>
       </section>
 
-      <section className="card">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Evidence</p>
-            <h2>Retrieved context</h2>
-          </div>
-        </div>
-        <div className="evidence-grid">
-          {Object.entries(incident.evidence).map(([key, values], idx) => (
-            <div key={`evidence-${idx}`} className="evidence-group">
-              <h3>{key.replaceAll("_", " ")}</h3>
-              {values.length === 0 ? (
-                <p className="muted">No matches</p>
-              ) : (
-                <ul>
-                  {values.map((value, valIdx) => (
-                    <li key={`evidence-${idx}-${valIdx}`}>{value}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
     </main>
   );
 }

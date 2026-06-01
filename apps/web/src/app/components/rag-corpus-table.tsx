@@ -41,17 +41,17 @@ export default function RagCorpusTable({ documents }: RagCorpusTableProps) {
   }
 
   return (
-    <section className="card" aria-label="RAG corpus">
+    <section className="card" aria-label="Corpus inventory">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Knowledge corpus</p>
-          <h2>RAG documents</h2>
+          <p className="eyebrow">Corpus inventory</p>
+          <h2>Indexed documents</h2>
         </div>
         <span className="muted">{sorted.length} documents</span>
       </div>
 
       {sorted.length === 0 ? (
-        <p className="muted">No RAG documents ingested yet.</p>
+        <p className="muted">No runbook documents are indexed yet.</p>
       ) : (
         <div className="rag-table-wrapper">
           <table className="rag-table">

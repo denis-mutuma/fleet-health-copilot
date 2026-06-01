@@ -74,11 +74,11 @@ export default function RagUploadForm() {
   }
 
   return (
-    <section className="upload-card" aria-label="RAG document upload">
+    <section className="upload-card" aria-label="Runbook document intake">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Knowledge ingestion</p>
-          <h2>Upload RAG document</h2>
+          <p className="eyebrow">Document intake</p>
+          <h2>Index runbook</h2>
         </div>
       </div>
 
@@ -150,7 +150,7 @@ export default function RagUploadForm() {
         </label>
 
         <button type="submit" className="button" disabled={isPending}>
-          {isPending ? "Uploading..." : "Upload and index"}
+          {isPending ? "Indexing..." : "Index document"}
         </button>
       </form>
 

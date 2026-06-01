@@ -21,6 +21,16 @@ function priorityLabel(incident: IncidentReport): string {
   return "Stable";
 }
 
+function verificationLabel(incident: IncidentReport): string {
+  if (incident.verification.passed === false) {
+    return "Flagged";
+  }
+  if ((incident.verification.warnings ?? []).length > 0) {
+    return "Review";
+  }
+  return "Passed";
+}
+
 export default async function HomePage() {
   let incidents: IncidentReport[] = [];
   let orchestratorUnavailable = false;
@@ -42,11 +52,12 @@ export default async function HomePage() {
     ? `/incidents/${incidents[0].incident_id}`
     : "/chat";
   const backendStatus = orchestratorUnavailable ? "Backend offline" : "Backend connected";
+  const latestIncident = incidents[0];
 
   return (
     <main className="container home-layout" aria-label="Fleet incident operations dashboard">
-      <header className="hero hero-home">
-        <div className="brand-row">
+      <header className="command-header">
+        <div className="command-lockup">
           <Image
             src="/logo.png"
             alt="Fleet Health Copilot logo"
@@ -54,13 +65,16 @@ export default async function HomePage() {
             width={28}
             height={28}
           />
-          <p className="eyebrow">Fleet operations</p>
+          <div>
+            <p className="eyebrow">Fleet command</p>
+            <h1>Operations board</h1>
+          </div>
         </div>
-        <h1>Fleet Health Copilot</h1>
-        <p className="hero-copy">
-          One place to inspect incidents, review grounded diagnoses, keep retrieval current, and
-          move from signal to action without leaving the console.
-        </p>
+        <div className="command-meta" aria-label="Current operating context">
+          <span className={orchestratorUnavailable ? "state-danger" : "state-ok"}>{backendStatus}</span>
+          <span>{latestIncident ? `Last signal ${latestIncident.device_id}` : "No active signal"}</span>
+          <span>{incidents.length} incident records</span>
+        </div>
       </header>
 
       <section
@@ -75,22 +89,26 @@ export default async function HomePage() {
         </span>
       </section>
 
-      <section className="ops-kpi-grid" aria-label="Incident status summary">
-        <div className="stat-card">
-          <span className="stat-value">{incidentCounts.open}</span>
-          <span className="stat-label">Open</span>
+      <section className="telemetry-strip" aria-label="Incident status summary">
+        <div className="telemetry-cell telemetry-alert">
+          <span className="telemetry-label">Open</span>
+          <span className="telemetry-value">{incidentCounts.open}</span>
         </div>
-        <div className="stat-card">
-          <span className="stat-value">{incidentCounts.acknowledged}</span>
-          <span className="stat-label">Acknowledged</span>
+        <div className="telemetry-cell telemetry-review">
+          <span className="telemetry-label">Acknowledged</span>
+          <span className="telemetry-value">{incidentCounts.acknowledged}</span>
         </div>
-        <div className="stat-card">
-          <span className="stat-value">{incidentCounts.resolved}</span>
-          <span className="stat-label">Resolved</span>
+        <div className="telemetry-cell telemetry-ok">
+          <span className="telemetry-label">Resolved</span>
+          <span className="telemetry-value">{incidentCounts.resolved}</span>
         </div>
-        <div className="stat-card">
-          <span className="stat-value">{incidents.length}</span>
-          <span className="stat-label">Total records</span>
+        <div className="telemetry-cell">
+          <span className="telemetry-label">Corpus</span>
+          <span className="telemetry-value">Linked</span>
+        </div>
+        <div className="telemetry-cell">
+          <span className="telemetry-label">Backend</span>
+          <span className="telemetry-value">{orchestratorUnavailable ? "Offline" : "Online"}</span>
         </div>
       </section>
 
@@ -99,7 +117,7 @@ export default async function HomePage() {
           <div className="section-heading">
             <div>
               <p className="eyebrow">Incident queue</p>
-              <h2>Active operational picture</h2>
+              <h2>Active signals</h2>
             </div>
             <span className="muted">{incidents.length} records</span>
           </div>
@@ -109,50 +127,63 @@ export default async function HomePage() {
               Orchestrator is unavailable. Start the API on port 8000, then refresh this page.
             </p>
           ) : incidents.length === 0 ? (
-            <p className="muted">No incidents yet. Trigger a simulation to populate the dashboard.</p>
+            <p className="muted">No incidents are loaded. Trigger a simulation to populate the board.</p>
           ) : (
-            <ul className="ops-incident-list">
+            <div className="ops-table" role="table" aria-label="Incident queue">
+              <div className="ops-table-head" role="row">
+                <span>Device</span>
+                <span>Incident</span>
+                <span>Status</span>
+                <span>Priority</span>
+                <span>Confidence</span>
+                <span>Verify</span>
+              </div>
               {incidents.map((incident) => (
-                <li key={incident.incident_id}>
-                  <Link href={`/incidents/${incident.incident_id}`} className="ops-incident-row">
-                    <span>
-                      <strong>{incident.device_id}</strong>
-                      <span className="incident-summary">{incident.summary}</span>
+                <Link
+                  key={incident.incident_id}
+                  href={`/incidents/${incident.incident_id}`}
+                  className="ops-table-row"
+                  role="row"
+                >
+                  <span className="ops-table-device mono">{incident.device_id}</span>
+                  <span className="ops-table-summary">
+                    <strong className="mono">{incident.incident_id}</strong>
+                    <span>{incident.summary}</span>
+                  </span>
+                  <span>
+                    <span className={`status-badge status-${incident.status}`}>
+                      {statusLabel(incident.status)}
                     </span>
-                    <span className="ops-incident-meta">
-                      <span className={`status-badge status-${incident.status}`}>
-                        {statusLabel(incident.status)}
-                      </span>
-                      <span>{priorityLabel(incident)}</span>
-                      <span>{(incident.confidence_score * 100).toFixed(0)}% confidence</span>
-                    </span>
-                  </Link>
-                </li>
+                  </span>
+                  <span>{priorityLabel(incident)}</span>
+                  <span>{(incident.confidence_score * 100).toFixed(0)}%</span>
+                  <span>{verificationLabel(incident)}</span>
+                </Link>
               ))}
-            </ul>
+            </div>
           )}
         </section>
 
         <aside className="card ops-action-rail" aria-label="Operator actions">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Actions</p>
-              <h2>Next move</h2>
+              <p className="eyebrow">Dispatch</p>
+              <h2>Operator actions</h2>
             </div>
           </div>
           <SimulateIncidentButton />
           <Link href={reviewIncidentsHref} className="secondary-button rag-link-button">
-            Review latest incident
+            Open latest report
           </Link>
           <Link href="/chat" className="secondary-button rag-link-button">
-            Open operator chat
+            Open comms channel
           </Link>
           <Link href="/rag" className="secondary-button rag-link-button">
-            Manage knowledge
+            Check corpus inventory
           </Link>
           <div className="ops-rail-note">
-            <strong>Grounding status</strong>
-            <span>Chat answers use the indexed corpus and incident records when available.</span>
+            <strong>Runbook readiness</strong>
+            <span>Chat uses indexed runbooks and incident records when the backend is online.</span>
           </div>
         </aside>
       </section>
@@ -162,8 +193,8 @@ export default async function HomePage() {
         <section className="card">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Operator flow</p>
-              <h2>Suggested loop</h2>
+              <p className="eyebrow">Run sequence</p>
+              <h2>Standard triage loop</h2>
             </div>
           </div>
           <ol className="timeline-list">

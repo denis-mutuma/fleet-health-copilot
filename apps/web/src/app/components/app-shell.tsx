@@ -47,7 +47,7 @@ export default function AppShell({ children }: AppShellProps) {
             <span className="app-brand-mark">FH</span>
             <span>
               <strong>Fleet Health Copilot</strong>
-              <span className="app-brand-subtitle">Operations console</span>
+              <span className="app-brand-subtitle">Fleet command</span>
             </span>
           </Link>
         </div>
@@ -65,11 +65,11 @@ export default function AppShell({ children }: AppShellProps) {
         </nav>
 
         <div className="app-sidebar-panel">
-          <p className="sidebar-label">Live workflow</p>
+          <p className="sidebar-label">Ops cycle</p>
           <ul className="sidebar-list">
-            <li>Monitor telemetry anomalies</li>
-            <li>Inspect grounded evidence</li>
-            <li>Coordinate action in chat</li>
+            <li>Detect anomaly</li>
+            <li>Verify evidence</li>
+            <li>Dispatch action</li>
           </ul>
         </div>
       </aside>
@@ -77,12 +77,12 @@ export default function AppShell({ children }: AppShellProps) {
       <div className="app-canvas">
         <header className="app-topbar">
           <div>
-            <p className="topbar-kicker">Multi-agent incident operations</p>
+            <p className="topbar-kicker">Command center</p>
             <h1 className="topbar-title">Fleet Health Copilot</h1>
           </div>
           <div className="app-topbar-actions">
-            <span className="topbar-chip">Operations console</span>
-            <span className="topbar-chip">RAG-enabled</span>
+            <span className="topbar-chip">Ops board</span>
+            <span className="topbar-chip">Corpus linked</span>
             <SignedIn>
               <UserButton />
             </SignedIn>

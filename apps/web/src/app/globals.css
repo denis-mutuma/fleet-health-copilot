@@ -107,19 +107,6 @@ textarea {
   font-size: 0.86rem;
 }
 
-.app-brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 8px;
-  background: #111111;
-  color: #f7faf8;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
 .app-nav {
   display: grid;
   gap: 6px;
@@ -320,12 +307,6 @@ textarea {
 
 .brand-row {
   justify-content: flex-start;
-}
-
-.brand-logo {
-  width: 30px;
-  height: 30px;
-  object-fit: contain;
 }
 
 .eyebrow {

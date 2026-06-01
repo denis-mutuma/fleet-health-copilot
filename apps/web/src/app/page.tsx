@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import SimulateIncidentButton from "./components/simulate-incident-button";
 import RagUploadForm from "./components/rag-upload-form";
@@ -58,13 +57,6 @@ export default async function HomePage() {
     <main className="container home-layout" aria-label="Fleet incident operations board">
       <header className="command-header">
         <div className="command-lockup">
-          <Image
-            src="/logo.png"
-            alt="Fleet Health Copilot logo"
-            className="brand-logo"
-            width={28}
-            height={28}
-          />
           <div>
             <p className="eyebrow">Fleet command</p>
             <h1>Operations board</h1>

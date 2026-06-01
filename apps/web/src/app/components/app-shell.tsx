@@ -44,7 +44,6 @@ export default function AppShell({ children }: AppShellProps) {
       <aside className="app-sidebar">
         <div className="app-brand-block">
           <Link href="/" className="app-brand-link">
-            <span className="app-brand-mark">FH</span>
             <span>
               <strong>Fleet Health Copilot</strong>
               <span className="app-brand-subtitle">Fleet command</span>

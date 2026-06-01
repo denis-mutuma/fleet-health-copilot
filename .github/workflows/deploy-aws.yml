@@ -101,9 +101,6 @@ jobs:
 
       - name: Detach legacy CloudFront WAF
         if: steps.desired-runtime.outputs.mode == 'single-instance'
-        env:
-          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
-          TF_VAR_public_subnet_ids: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
         run: |
           set -euo pipefail
           if grep -Eq '^[[:space:]]*enable_waf[[:space:]]*=[[:space:]]*true' "infra/terraform/env/${TF_ENV}.tfvars"; then
@@ -111,12 +108,32 @@ jobs:
             exit 0
           fi
 
-          terraform -chdir=infra/terraform apply -auto-approve -input=false \
-            -target=aws_cloudfront_distribution.web \
-            -var-file="env/${TF_ENV}.tfvars" \
-            -var="github_repository=${{ github.repository }}" \
-            -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
-            -var='container_image_tags={web="latest",orchestrator="latest"}'
+          distribution_comment="fleet-health-copilot-${TF_ENV} web edge"
+          distribution_id=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${distribution_comment}'].Id | [0]" \
+            --output text)
+          if [ -z "${distribution_id}" ] || [ "${distribution_id}" = "None" ]; then
+            echo "CloudFront distribution not found for comment: ${distribution_comment}" >&2
+            exit 1
+          fi
+
+          aws cloudfront get-distribution-config \
+            --id "${distribution_id}" \
+            --output json > cloudfront-config-response.json
+          etag=$(jq -r '.ETag' cloudfront-config-response.json)
+          current_waf=$(jq -r '.DistributionConfig.WebACLId // ""' cloudfront-config-response.json)
+          if [ -z "${current_waf}" ]; then
+            echo "CloudFront distribution ${distribution_id} has no WAF association."
+            exit 0
+          fi
+
+          jq '.DistributionConfig | .WebACLId = ""' \
+            cloudfront-config-response.json > cloudfront-config.json
+          aws cloudfront update-distribution \
+            --id "${distribution_id}" \
+            --if-match "${etag}" \
+            --distribution-config file://cloudfront-config.json >/dev/null
+          aws cloudfront wait distribution-deployed --id "${distribution_id}"
 
       - name: Terraform apply (bootstrap single instance)
         if: steps.desired-runtime.outputs.mode == 'single-instance'

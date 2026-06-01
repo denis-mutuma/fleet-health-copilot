@@ -99,6 +99,25 @@ jobs:
             -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
             -var='container_image_tags={web="latest",orchestrator="latest"}'
 
+      - name: Detach legacy CloudFront WAF
+        if: steps.desired-runtime.outputs.mode == 'single-instance'
+        env:
+          TF_VAR_vpc_id: ${{ secrets.VPC_ID }}
+          TF_VAR_public_subnet_ids: ${{ secrets.PUBLIC_SUBNET_IDS_JSON }}
+        run: |
+          set -euo pipefail
+          if grep -Eq '^[[:space:]]*enable_waf[[:space:]]*=[[:space:]]*true' "infra/terraform/env/${TF_ENV}.tfvars"; then
+            echo "WAF is enabled in ${TF_ENV}; no detach needed."
+            exit 0
+          fi
+
+          terraform -chdir=infra/terraform apply -auto-approve -input=false \
+            -target=aws_cloudfront_distribution.web \
+            -var-file="env/${TF_ENV}.tfvars" \
+            -var="github_repository=${{ github.repository }}" \
+            -var="web_next_public_clerk_publishable_key=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
+            -var='container_image_tags={web="latest",orchestrator="latest"}'
+
       - name: Terraform apply (bootstrap single instance)
         if: steps.desired-runtime.outputs.mode == 'single-instance'
         env:

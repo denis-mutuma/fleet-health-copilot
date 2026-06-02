@@ -24,6 +24,7 @@ infra/terraform/backend.ci.hcl
 
 # Local data artifacts
 *.db
+build/
 
 # OS/Editor
 .DS_Store
@@ -39,4 +40,3 @@ idea/
 
 # Next.js build output
 apps/web/.next/
-

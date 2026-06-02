@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from fleet_health_orchestrator.dependencies import initialize_dependencies
@@ -17,6 +17,102 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+
+
+DEMO_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fleet Health Lambda Demo</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f7f8fa; color: #17202a; }
+    main { max-width: 980px; margin: 0 auto; padding: 32px 18px 48px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 24px; }
+    h1 { font-size: clamp(1.75rem, 3vw, 2.6rem); margin: 0; letter-spacing: 0; }
+    button { border: 1px solid #1f6feb; background: #1f6feb; color: white; border-radius: 6px; padding: 10px 14px; font-weight: 700; cursor: pointer; }
+    button.secondary { background: white; color: #1f6feb; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+    .panel { background: white; border: 1px solid #d7dde5; border-radius: 8px; padding: 16px; }
+    .muted { color: #5d6b7a; }
+    .status { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; background: #e8f4ed; color: #176b3a; font-weight: 700; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #101820; color: #eaf0f6; border-radius: 6px; padding: 12px; min-height: 96px; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Fleet Health Lambda Demo</h1>
+        <p class="muted">Ephemeral AWS-only demo served by one Lambda Function URL.</p>
+      </div>
+      <span id="status" class="status">Checking</span>
+    </header>
+    <section class="grid">
+      <article class="panel">
+        <h2>Incidents</h2>
+        <p class="muted">Seeded sample data resets with Lambda storage.</p>
+        <button onclick="loadIncidents()">Refresh</button>
+        <button class="secondary" onclick="simulateIncident()">Simulate</button>
+        <ul id="incidents"></ul>
+      </article>
+      <article class="panel">
+        <h2>Runbook Search</h2>
+        <p class="muted">Lexical RAG only. No S3 Vectors or OpenAI calls.</p>
+        <button onclick="searchRunbooks()">Search thermal</button>
+        <pre id="rag"></pre>
+      </article>
+    </section>
+  </main>
+  <script>
+    async function request(path, options) {
+      const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    }
+    async function check() {
+      try {
+        await request("/health");
+        document.getElementById("status").textContent = "Online";
+        await loadIncidents();
+      } catch (error) {
+        document.getElementById("status").textContent = "Offline";
+      }
+    }
+    async function loadIncidents() {
+      const incidents = await request("/v1/incidents");
+      document.getElementById("incidents").innerHTML = incidents.map((item) =>
+        `<li><strong>${item.device_id}</strong>: ${item.summary}<br><span class="muted">${item.status} · ${Math.round(item.confidence_score * 100)}%</span></li>`
+      ).join("");
+    }
+    async function simulateIncident() {
+      await request("/v1/orchestrate/event", {
+        method: "POST",
+        body: JSON.stringify({
+          event_id: `evt_demo_${Date.now()}`,
+          fleet_id: "fleet-demo",
+          device_id: "robot-07",
+          timestamp: new Date().toISOString(),
+          metric: "motor_current_a",
+          value: 42.5,
+          threshold: 35,
+          severity: "medium",
+          tags: ["motor", "current"]
+        })
+      });
+      await loadIncidents();
+    }
+    async function searchRunbooks() {
+      const hits = await request("/v1/rag/search?query=battery%20thermal&limit=3");
+      document.getElementById("rag").textContent = JSON.stringify(hits, null, 2);
+    }
+    check();
+  </script>
+</body>
+</html>
+"""
 
 
 def _make_lifespan(dependencies):  # type: ignore[no-untyped-def]
@@ -107,6 +203,10 @@ def create_app() -> FastAPI:
     dependencies.logger.info(
         "Middleware registered: CorrelationID, AuthContext, RequestLogging, DebugLogging"
     )
+
+    @app.get("/", include_in_schema=False)
+    async def demo_home() -> HTMLResponse:
+        return HTMLResponse(DEMO_HTML)
 
     @app.exception_handler(OrchestratorError)
     async def orchestrator_error_handler(_: Request, exc: OrchestratorError) -> JSONResponse:

@@ -134,7 +134,7 @@ def initialize_dependencies() -> AppDependencies:
 
     metrics = RuntimeMetrics()
 
-    return AppDependencies(
+    dependencies = AppDependencies(
         settings=settings,
         logger=logger,
         repository=repository,
@@ -144,6 +144,16 @@ def initialize_dependencies() -> AppDependencies:
         chat_orchestrator=chat_orchestrator,
         metrics=metrics,
     )
+
+    if settings.lambda_demo_enabled:
+        try:
+            from fleet_health_orchestrator.demo import seed_lambda_demo_state
+
+            seed_lambda_demo_state(dependencies)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Lambda demo seed skipped: %s", exc)
+
+    return dependencies
 
 
 def get_dependencies(request: Request) -> AppDependencies:

@@ -1239,6 +1239,56 @@ def post_chat_message(
         ) from exc
 
     llm_turn_latency_ms = (perf_counter() - llm_turn_started_at) * 1000
+    if turn_result is None and dependencies.settings.lambda_demo_enabled:
+        hits = dependencies.retrieval_backend.search(
+            query=message.content,
+            documents=dependencies.repository.list_rag_documents(tenant_id=identity.tenant_id),
+            limit=3,
+        )
+        assistant_text = (
+            "Lambda demo mode is running without OpenAI. "
+            "Relevant runbooks: "
+            + (
+                ", ".join(f"{hit.title} ({hit.document_id})" for hit in hits)
+                if hits
+                else "no matching runbooks found"
+            )
+            + "."
+        )
+        dependencies.repository.insert_chat_message(
+            message_id=f"msg_{uuid4().hex[:14]}",
+            session_id=clean_session_id,
+            role="assistant",
+            content=assistant_text,
+            citations=[
+                {
+                    "document_id": hit.document_id,
+                    "title": hit.title,
+                    "source": hit.source,
+                    "score": hit.score,
+                    "excerpt": hit.excerpt,
+                }
+                for hit in hits
+            ],
+            action="rag_answer",
+            action_status="success",
+            action_payload={"mode": "lambda_demo"},
+        )
+        refreshed_session = dependencies.repository.get_chat_session(
+            clean_session_id,
+            tenant_id=identity.tenant_id,
+        )
+        if refreshed_session is None:
+            raise ResourceNotFoundError(
+                "Chat session not found.",
+                details={"session_id": clean_session_id},
+            )
+        refreshed_messages = dependencies.repository.list_chat_messages(clean_session_id)
+        return ChatConversation(
+            session=_to_chat_session(refreshed_session),
+            messages=[_to_chat_message(row) for row in refreshed_messages],
+        )
+
     if turn_result is None:
         # Guard against missing key/disabled model path.
         raise ReadinessError(

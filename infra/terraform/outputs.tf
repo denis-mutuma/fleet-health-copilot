@@ -1,5 +1,5 @@
 output "artifacts_bucket_name" {
-  value       = aws_s3_bucket.artifacts.bucket
+  value       = local.shared_artifacts_enabled ? aws_s3_bucket.artifacts[0].bucket : null
   description = "Artifact bucket used by the selected environment."
 }
 
@@ -46,8 +46,13 @@ output "web_cloudfront_domain_name" {
 }
 
 output "web_public_entrypoint_url" {
-  value       = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.web[0].domain_name}" : (var.enable_ecs ? "http://${aws_lb.web[0].dns_name}" : (var.enable_single_instance ? "http://${aws_eip.single_instance[0].public_dns}" : null))
+  value       = var.enable_lambda_demo ? aws_lambda_function_url.demo[0].function_url : (var.enable_cloudfront ? "https://${aws_cloudfront_distribution.web[0].domain_name}" : (var.enable_ecs ? "http://${aws_lb.web[0].dns_name}" : (var.enable_single_instance ? "http://${aws_eip.single_instance[0].public_dns}" : null)))
   description = "Preferred public entrypoint URL for the deployed web application."
+}
+
+output "lambda_demo_function_url" {
+  value       = var.enable_lambda_demo ? aws_lambda_function_url.demo[0].function_url : null
+  description = "Public Lambda Function URL for the AWS-only zero-bill demo."
 }
 
 output "single_instance_id" {

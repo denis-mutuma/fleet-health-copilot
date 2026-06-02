@@ -79,6 +79,43 @@ variable "enable_single_instance" {
   default     = false
 }
 
+variable "enable_lambda_demo" {
+  type        = bool
+  description = "Whether to create the AWS-only zero-bill demo path using one Lambda Function URL."
+  default     = false
+}
+
+variable "lambda_demo_package_path" {
+  type        = string
+  description = "Local path to the orchestrator Lambda deployment zip. Build it before terraform apply."
+  default     = "../../build/fleet-health-orchestrator-lambda.zip"
+}
+
+variable "lambda_demo_memory_size" {
+  type        = number
+  description = "Memory size in MB for the Lambda demo function."
+  default     = 256
+}
+
+variable "lambda_demo_timeout_seconds" {
+  type        = number
+  description = "Timeout in seconds for the Lambda demo function."
+  default     = 10
+}
+
+variable "lambda_demo_reserved_concurrency" {
+  type        = number
+  description = "Reserved concurrency for the Lambda demo function. Leave null for small accounts where AWS must keep at least 10 unreserved concurrent executions."
+  default     = null
+  nullable    = true
+}
+
+variable "cost_alert_email" {
+  type        = string
+  description = "Email address for the optional $0.01 cost budget alert. Leave empty to skip the budget."
+  default     = ""
+}
+
 variable "cloudfront_origin_mode" {
   type        = string
   description = "CloudFront origin mode for the web distribution: ecs or single_instance."
@@ -191,8 +228,8 @@ variable "enable_api_gateway" {
   default     = false
 
   validation {
-    condition     = !var.enable_api_gateway || var.enable_ecs
-    error_message = "enable_api_gateway requires enable_ecs."
+    condition     = !var.enable_api_gateway || (var.enable_ecs && !var.enable_lambda_demo)
+    error_message = "enable_api_gateway requires enable_ecs and cannot be combined with enable_lambda_demo."
   }
 }
 
@@ -202,8 +239,8 @@ variable "enable_cloudfront" {
   default     = false
 
   validation {
-    condition     = !var.enable_cloudfront || var.enable_ecs || var.enable_single_instance
-    error_message = "enable_cloudfront requires enable_ecs or enable_single_instance."
+    condition     = !var.enable_cloudfront || ((var.enable_ecs || var.enable_single_instance) && !var.enable_lambda_demo)
+    error_message = "enable_cloudfront requires enable_ecs or enable_single_instance and cannot be combined with enable_lambda_demo."
   }
 }
 

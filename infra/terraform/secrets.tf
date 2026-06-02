@@ -1,5 +1,5 @@
 locals {
-  managed_secret_names = var.enable_managed_secrets ? var.managed_secret_names : []
+  managed_secret_names = var.enable_managed_secrets && !var.enable_lambda_demo ? var.managed_secret_names : []
   managed_secret_arns = {
     for name, secret in aws_secretsmanager_secret.managed : name => secret.arn
   }

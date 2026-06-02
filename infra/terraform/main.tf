@@ -8,17 +8,22 @@ locals {
     },
     var.tags
   )
-  github_oidc_enabled = var.github_repository != ""
+  github_oidc_enabled      = var.github_repository != "" && !var.enable_lambda_demo
+  shared_artifacts_enabled = !var.enable_lambda_demo
 }
 
 resource "aws_s3_bucket" "artifacts" {
+  count = local.shared_artifacts_enabled ? 1 : 0
+
   bucket = "${local.name_prefix}-artifacts"
 
   tags = local.common_tags
 }
 
 resource "aws_s3_bucket_public_access_block" "artifacts" {
-  bucket = aws_s3_bucket.artifacts.id
+  count = local.shared_artifacts_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.artifacts[0].id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -27,7 +32,9 @@ resource "aws_s3_bucket_public_access_block" "artifacts" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
-  bucket = aws_s3_bucket.artifacts.id
+  count = local.shared_artifacts_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.artifacts[0].id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -37,7 +44,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
 }
 
 resource "aws_ecr_repository" "service" {
-  for_each = var.container_repositories
+  for_each = local.shared_artifacts_enabled ? var.container_repositories : []
 
   name                 = "${local.name_prefix}-${each.value}"
   image_tag_mutability = "MUTABLE"

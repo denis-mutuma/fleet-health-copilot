@@ -277,6 +277,13 @@ class OrchestratorSettings(BaseSettings):
         validation_alias=AliasChoices("RAG_INDEX_BATCH_SIZE", "FLEET_RAG_INDEX_BATCH_SIZE"),
     )
 
+    # === Lambda Demo Mode ===
+    lambda_demo_enabled: bool = Field(
+        default=False,
+        description="Enable ephemeral AWS Lambda demo defaults and seed data.",
+        validation_alias=AliasChoices("LAMBDA_DEMO", "FLEET_LAMBDA_DEMO"),
+    )
+
     # === Logging Configuration ===
     log_level: str = Field(
         default="INFO",
@@ -349,11 +356,15 @@ class OrchestratorSettings(BaseSettings):
     @property
     def llm_enabled(self) -> bool:
         """Return whether OpenAI-backed LLM features are available."""
+        if self.lambda_demo_enabled:
+            return False
         return bool(self.openai_api_key.strip())
 
     @property
     def effective_embedding_provider(self) -> str:
         """Prefer OpenAI embeddings when an API key is present and provider is unset/hash."""
+        if self.lambda_demo_enabled:
+            return "hash"
         provider = self.embedding_provider.strip().lower()
         if self.llm_enabled and provider in ("", "hash", "deterministic", "pseudo"):
             return "openai"
@@ -362,16 +373,22 @@ class OrchestratorSettings(BaseSettings):
     @property
     def effective_llm_report_refine_enabled(self) -> bool:
         """Auto-enable report refinement when OpenAI is configured."""
+        if self.lambda_demo_enabled:
+            return False
         return self.llm_report_refine_enabled or self.llm_enabled
 
     @property
     def effective_llm_diagnosis_enrich_enabled(self) -> bool:
         """Auto-enable diagnosis enrichment when OpenAI is configured."""
+        if self.lambda_demo_enabled:
+            return False
         return self.llm_diagnosis_enrich_enabled or self.llm_enabled
 
     @property
     def effective_llm_chat_enabled(self) -> bool:
         """Auto-enable chat LLM mode when OpenAI is configured."""
+        if self.lambda_demo_enabled:
+            return False
         return self.llm_chat_enabled or self.llm_enabled
 
     def __str__(self) -> str:

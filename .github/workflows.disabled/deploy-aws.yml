@@ -1,3 +1,4 @@
+# Archived during AWS teardown. Files outside .github/workflows are not active GitHub Actions.
 name: Deploy AWS
 
 "on":
